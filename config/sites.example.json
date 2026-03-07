@@ -1,0 +1,30 @@
+{
+  "sites": [
+    {
+      "id": "my-blog",
+      "name": "My WordPress Blog",
+      "url": "https://example.com",
+      "username": "admin",
+      "app_password": "xxxx xxxx xxxx xxxx xxxx xxxx",
+      "default": true,
+      "export": {
+        "output_dir": "C:/projects/my-blog-astro",
+        "content_format": "md",
+        "media_strategy": "rewrite",
+        "media_domain": "app.example.com",
+        "include_statuses": ["publish"],
+        "year_month_dirs": true,
+        "component_library": "starwind",
+        "deploy_platform": "vercel",
+        "rate_limit": 10
+      }
+    }
+  ],
+  "github_token": "ghp_your_github_token_here",
+  "global_settings": {
+    "default_rate_limit": 10,
+    "default_content_format": "md",
+    "default_component_library": "starwind",
+    "default_deploy_platform": "vercel"
+  }
+}

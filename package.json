@@ -1,0 +1,43 @@
+{
+  "name": "wp-astro-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for migrating WordPress sites to Astro with multi-site support and GitHub publishing",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "npx tsc",
+    "start": "node dist/index.js",
+    "dev": "npx tsc --watch",
+    "setup": "npm install && npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@octokit/rest": "^21.0.0",
+    "axios": "^1.7.0",
+    "better-sqlite3": "^12.6.2",
+    "cheerio": "^1.0.0",
+    "fast-xml-parser": "^4.4.0",
+    "he": "^1.2.0",
+    "isomorphic-dompurify": "^2.16.0",
+    "p-limit": "^6.1.0",
+    "sanitize-filename": "^1.6.3",
+    "simple-git": "^3.27.0",
+    "turndown": "^7.2.0",
+    "turndown-plugin-gfm": "^1.0.2",
+    "yaml": "^2.6.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/he": "^1.2.3",
+    "@types/node": "^20.19.0",
+    "@types/turndown": "^5.0.5",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
