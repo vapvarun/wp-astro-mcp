@@ -559,6 +559,29 @@ In a SQLite database at `data/wp-astro.db` (gitignored). Contains export job sta
 - Run `convert_preview` to inspect specific posts
 - The pipeline strips builder wrappers and keeps content — some complex layouts may need manual review
 
+### Build fails with "JavaScript heap out of memory"
+
+This happens on CI/CD platforms with limited memory (Cloudflare Pages ~4GB, Netlify ~3GB). The TypeScript compiler needs more heap space for large projects.
+
+**Quick fix:** Use the built-in memory-optimized build scripts:
+```bash
+npm run build          # 4GB heap limit
+npm run build:low-mem  # 2GB heap + incremental compilation
+```
+
+**Per-platform fixes:**
+
+| Platform | Solution |
+|----------|----------|
+| Cloudflare Pages | Set build command to `npm run build` or add env var `NODE_OPTIONS=--max-old-space-size=3072` |
+| Netlify | Add env var `NODE_OPTIONS=--max-old-space-size=3072` in Site Settings → Build & Deploy → Environment |
+| Vercel | Usually fine (8GB default). If failing, add `NODE_OPTIONS=--max-old-space-size=4096` in Project Settings → Environment Variables |
+| GitHub Actions | Add `env: NODE_OPTIONS: --max-old-space-size=4096` to your build step |
+
+**Still failing?** Pre-build locally and commit the `dist/` folder — skip compilation on CI entirely.
+
+See [docs/faq.md](docs/faq.md#build--deployment) for detailed CI/CD setup guides per platform.
+
 ---
 
 ## Requirements

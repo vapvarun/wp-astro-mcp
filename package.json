@@ -5,7 +5,8 @@
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "build": "npx tsc",
+    "build": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc",
+    "build:low-mem": "node --max-old-space-size=2048 ./node_modules/typescript/bin/tsc --incremental",
     "start": "node dist/index.js",
     "dev": "npx tsc --watch",
     "setup": "npm install && npm run build",
