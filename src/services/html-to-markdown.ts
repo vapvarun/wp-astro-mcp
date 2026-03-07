@@ -22,7 +22,8 @@ import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
 import * as cheerio from 'cheerio';
 import DOMPurify from 'isomorphic-dompurify';
-import { decode } from 'he';
+import he from 'he';
+const { decode } = he;
 
 import type { WPPost, SiteConfig, ConversionResult, ConversionIssue } from '../types/index.js';
 import { resolveShortcodes } from './shortcode-resolver.js';

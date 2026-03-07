@@ -18,7 +18,7 @@ Technical overview of how WP Astro MCP is built.
 │                                                          │
 │  ┌─────────┐  ┌──────────┐  ┌──────────┐               │
 │  │ Router  │  │ Handler  │  │ Services │               │
-│  │ 3 tools │→│ 48 tools │→│          │               │
+│  │ 3 tools │→│ 55 tools │→│          │               │
 │  └─────────┘  └──────────┘  └──────────┘               │
 │                                    │                     │
 │  ┌────────────────────────────────────────────┐         │
@@ -48,7 +48,7 @@ Technical overview of how WP Astro MCP is built.
 
 ### Router Pattern
 
-Instead of exposing 48 tools to the LLM (which wastes tokens on tool definitions), we use 3 meta-tools:
+Instead of exposing 55 tools to the LLM (which wastes tokens on tool definitions), we use 3 meta-tools:
 
 | Tool | Purpose |
 |------|---------|
@@ -58,7 +58,7 @@ Instead of exposing 48 tools to the LLM (which wastes tokens on tool definitions
 
 This pattern keeps the MCP tool list compact while providing full discoverability.
 
-**Full mode** (`WP_ASTRO_MODE=full`) exposes all 48 tools directly — useful for programmatic access or when token cost isn't a concern.
+**Full mode** (`WP_ASTRO_MODE=full`) exposes all 55 tools directly — useful for programmatic access or when token cost isn't a concern.
 
 ### Tool Categories
 
@@ -67,9 +67,11 @@ TOOL_CATEGORIES = {
   site:      9 tools  — Site lifecycle management
   extract:  13 tools  — WordPress content fetching
   transform: 6 tools  — HTML-to-Markdown conversion
-  output:    7 tools  — Astro file generation
+  output:    5 tools  — Astro file generation
+  media:     2 tools  — Media audit and rewriting
   github:    6 tools  — Git and GitHub operations
   export:    7 tools  — Batch processing engine
+  sync:      7 tools  — Ongoing content sync
 }
 ```
 
@@ -248,7 +250,8 @@ config (JSON), started_at, completed_at
 id, job_id, site_id, wp_post_id, post_type, slug, title,
 status (pending|in_progress|completed|failed),
 output_path, issues (JSON), input_size, output_size,
-conversion_ms, content_hash, retry_count, error_message
+conversion_ms, content_hash, wp_modified_gmt,
+retry_count, error_message
 ```
 
 **`cached_terms`** — Pre-fetched taxonomy terms
@@ -256,6 +259,7 @@ conversion_ms, content_hash, retry_count, error_message
 **`url_map`** — WordPress URL → Astro URL (for redirects + link rewriting)
 **`shortcode_map`** — Per-site shortcode handling rules
 **`audit_log`** — Operation history
+**`sync_history`** — Content sync run history (timestamps, change counts, status)
 
 ### Site Config (`sites.ts`)
 

@@ -135,39 +135,18 @@ export const syncTools: Tool[] = [
 // Database Helpers
 // ============================================================
 
+/**
+ * Ensure sync tables exist (backward compat for DBs created before sync was added)
+ */
 function ensureSyncSchema(): void {
   const db = database.getDatabase();
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS sync_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      site_id TEXT NOT NULL,
-      started_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      completed_at TEXT,
-      status TEXT DEFAULT 'in_progress',
-      new_posts INTEGER DEFAULT 0,
-      updated_posts INTEGER DEFAULT 0,
-      deleted_posts INTEGER DEFAULT 0,
-      unchanged_posts INTEGER DEFAULT 0,
-      errors INTEGER DEFAULT 0,
-      post_types TEXT,
-      details TEXT
-    )
-  `);
-
-  // Add wp_modified_gmt column to export_posts if it doesn't exist
+  // Add wp_modified_gmt column if missing (for databases created before Phase 7)
   try {
     db.exec(`ALTER TABLE export_posts ADD COLUMN wp_modified_gmt TEXT`);
-  } catch {
-    // Column already exists
+  } catch (_e: unknown) {
+    // Column already exists — this is expected for new installs
   }
-
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_sync_history_site
-      ON sync_history(site_id, started_at);
-    CREATE INDEX IF NOT EXISTS idx_export_posts_wp_id
-      ON export_posts(site_id, wp_post_id);
-  `);
 }
 
 function getLastSyncTime(siteId: string): string | null {
@@ -361,7 +340,7 @@ async function detectChanges(
         // Try to fetch with any status
         await wpClient.fetchPost(siteId, wpPostId);
         // Post exists — just not in our filter criteria, don't delete
-      } catch {
+      } catch (_e: unknown) {
         // 404 — post is truly deleted
         changes.deletedPosts.push({
           id: wpPostId,

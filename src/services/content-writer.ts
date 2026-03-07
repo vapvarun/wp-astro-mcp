@@ -262,7 +262,7 @@ export function auditMedia(
       try {
         const domain = new URL(url).hostname;
         domains[domain] = (domains[domain] || 0) + 1;
-      } catch {
+      } catch (_e: unknown) {
         brokenRefs.push(url);
       }
 

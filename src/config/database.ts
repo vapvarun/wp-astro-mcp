@@ -73,7 +73,7 @@ class DatabaseManager {
       )
     `);
 
-    // Per-post export state — enables resumability
+    // Per-post export state — enables resumability and sync
     db.exec(`
       CREATE TABLE IF NOT EXISTS export_posts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,6 +90,7 @@ class DatabaseManager {
         output_size INTEGER,
         conversion_ms INTEGER,
         content_hash TEXT,
+        wp_modified_gmt TEXT,
         retry_count INTEGER DEFAULT 0,
         error_message TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -168,18 +169,40 @@ class DatabaseManager {
       )
     `);
 
+    // Content sync history — tracks ongoing WordPress→Astro sync runs
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS sync_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        site_id TEXT NOT NULL,
+        started_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        completed_at TEXT,
+        status TEXT DEFAULT 'in_progress',
+        new_posts INTEGER DEFAULT 0,
+        updated_posts INTEGER DEFAULT 0,
+        deleted_posts INTEGER DEFAULT 0,
+        unchanged_posts INTEGER DEFAULT 0,
+        errors INTEGER DEFAULT 0,
+        post_types TEXT,
+        details TEXT
+      )
+    `);
+
     // Indexes for performance
     db.exec(`
       CREATE INDEX IF NOT EXISTS idx_export_posts_status
         ON export_posts(job_id, status);
       CREATE INDEX IF NOT EXISTS idx_export_posts_slug
         ON export_posts(job_id, slug);
+      CREATE INDEX IF NOT EXISTS idx_export_posts_wp_id
+        ON export_posts(site_id, wp_post_id);
       CREATE INDEX IF NOT EXISTS idx_cached_terms_site
         ON cached_terms(site_id, taxonomy);
       CREATE INDEX IF NOT EXISTS idx_url_map_site
         ON url_map(site_id);
       CREATE INDEX IF NOT EXISTS idx_audit_site
         ON audit_log(site_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_sync_history_site
+        ON sync_history(site_id, started_at);
     `);
   }
 

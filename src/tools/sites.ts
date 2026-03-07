@@ -362,7 +362,7 @@ export const siteHandlers: Record<string, (params: unknown) => Promise<unknown>>
           });
           postTypeCounts[pt.slug] = pagination.total;
           restBases[pt.slug] = pt.rest_base;
-        } catch {
+        } catch (_e: unknown) {
           postTypeCounts[pt.slug] = 0;
         }
       }
@@ -373,7 +373,7 @@ export const siteHandlers: Record<string, (params: unknown) => Promise<unknown>>
         try {
           const { pagination } = await wpClient.fetchTerms(siteId, tax.rest_base, 1, 1);
           taxonomyCounts[tax.slug] = pagination.total;
-        } catch {
+        } catch (_e: unknown) {
           taxonomyCounts[tax.slug] = 0;
         }
       }
@@ -383,7 +383,7 @@ export const siteHandlers: Record<string, (params: unknown) => Promise<unknown>>
       try {
         const authors = await wpClient.fetchAuthors(siteId);
         authorCount = authors.length;
-      } catch {
+      } catch (_e: unknown) {
         // Author endpoint may be restricted
       }
 
@@ -395,7 +395,7 @@ export const siteHandlers: Record<string, (params: unknown) => Promise<unknown>>
           perPage: 1,
         });
         mediaCount = pagination.total;
-      } catch {
+      } catch (_e: unknown) {
         // Media endpoint may be restricted
       }
 

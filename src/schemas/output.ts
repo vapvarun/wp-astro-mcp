@@ -10,13 +10,6 @@ export const scaffoldProjectSchema = z.object({
   force: z.boolean().optional().describe('Overwrite existing files (default: false)'),
 });
 
-export const scaffoldCollectionSchema = z.object({
-  site_id: z.string().optional().describe('Site ID (uses default if omitted)'),
-  post_type: z.string().describe('WordPress post type slug'),
-  directory: z.string().optional().describe('Collection directory name (default: based on post type)'),
-  output_dir: z.string().optional().describe('Output directory (uses site export config if omitted)'),
-});
-
 export const writePostSchema = z.object({
   site_id: z.string().optional().describe('Site ID (uses default if omitted)'),
   post_id: z.number().describe('WordPress post ID'),
@@ -40,11 +33,6 @@ export const generateRedirectsSchema = z.object({
   format: z.enum(['netlify', 'vercel', 'cloudflare', 'apache', 'nginx']).optional().describe('Redirect format (default: based on deploy_platform)'),
 });
 
-export const generateSchemasSchema = z.object({
-  site_id: z.string().optional().describe('Site ID (uses default if omitted)'),
-  output_dir: z.string().optional().describe('Output directory (uses site export config if omitted)'),
-});
-
 export const mediaAuditSchema = z.object({
   site_id: z.string().optional().describe('Site ID (uses default if omitted)'),
   output_dir: z.string().optional().describe('Output directory to scan'),
@@ -63,7 +51,6 @@ export const listOutputSchema = z.object({
 });
 
 export type ScaffoldProjectParams = z.infer<typeof scaffoldProjectSchema>;
-export type ScaffoldCollectionParams = z.infer<typeof scaffoldCollectionSchema>;
 export type WritePostParams = z.infer<typeof writePostSchema>;
 export type WriteBatchParams = z.infer<typeof writeBatchSchema>;
 export type GenerateRedirectsParams = z.infer<typeof generateRedirectsSchema>;

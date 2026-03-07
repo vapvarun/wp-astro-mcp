@@ -14,7 +14,7 @@
 
 Migrating WordPress to Astro involves dozens of tedious steps: fetching content via API, cleaning up page builder markup, resolving shortcodes, building frontmatter, setting up content collections, handling media URLs, generating redirects, deploying. Each site has its own plugins, page builders, and content patterns.
 
-This MCP server handles all of it. Tell Claude to migrate your site, and it orchestrates 48 specialized tools to get it done.
+This MCP server handles all of it. Tell Claude to migrate your site, and it orchestrates 55 specialized tools to get it done.
 
 ---
 
@@ -568,7 +568,7 @@ Yes. Register as many sites as you want. Each site has its own config, export se
 ### Technical
 
 **Q: What's the difference between `router` and `full` mode?**
-In `router` mode (default), only 3 tools are exposed to Claude: `wp_astro_run`, `wp_astro_help`, `wp_astro_describe`. This saves tokens. In `full` mode, all 48 tools are exposed directly. Set via `WP_ASTRO_MODE` env var.
+In `router` mode (default), only 3 tools are exposed to Claude: `wp_astro_run`, `wp_astro_help`, `wp_astro_describe`. This saves tokens. In `full` mode, all 55 tools are exposed directly. Set via `WP_ASTRO_MODE` env var.
 
 **Q: Does it handle rate limiting?**
 Yes. Each site has a token-bucket rate limiter (default: 10 req/s). If WordPress returns a 429, the rate is automatically halved. Configurable via `rate_limit` in export config.

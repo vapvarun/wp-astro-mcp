@@ -295,7 +295,7 @@ class WPRestClient {
           '/wp/v2/settings'
         );
         wpVersion = settings.wp_version;
-      } catch {
+      } catch (_e: unknown) {
         // Settings endpoint may require admin access
       }
 
@@ -504,12 +504,12 @@ class WPRestClient {
       // Try WP 5.9+ navigation endpoint
       const { data } = await this.get<unknown[]>(site, '/wp/v2/navigation');
       return data;
-    } catch {
+    } catch (_e: unknown) {
       // Try menus endpoint (requires WP REST API Menus plugin or similar)
       try {
         const { data } = await this.get<unknown[]>(site, '/wp/v2/menus');
         return data;
-      } catch {
+      } catch (_e: unknown) {
         logger.warn('Menu endpoints not available', { siteId });
         return [];
       }
@@ -524,7 +524,7 @@ class WPRestClient {
     try {
       const { data } = await this.get<unknown[]>(site, '/wp/v2/sidebars');
       return data;
-    } catch {
+    } catch (_e: unknown) {
       logger.warn('Sidebars endpoint not available', { siteId });
       return [];
     }
@@ -541,7 +541,7 @@ class WPRestClient {
         '/wp/v2/settings'
       );
       return data;
-    } catch {
+    } catch (_e: unknown) {
       logger.warn('Settings endpoint not available (may need admin role)', {
         siteId,
       });

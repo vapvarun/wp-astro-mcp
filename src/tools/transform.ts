@@ -180,7 +180,7 @@ export const transformHandlers: Record<string, (params: unknown) => Promise<unkn
         let fullPost;
         try {
           fullPost = await wpClient.fetchPost(siteId, post.id, restBase);
-        } catch {
+        } catch (_e: unknown) {
           fullPost = post;
         }
 
@@ -353,7 +353,7 @@ export const transformHandlers: Record<string, (params: unknown) => Promise<unkn
             }
             totalScanned++;
           }
-        } catch {
+        } catch (_e: unknown) {
           // Skip post type on error
         }
       }

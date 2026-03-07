@@ -636,12 +636,12 @@ export const extractHandlers: Record<string, (params: unknown) => Promise<unknow
             try {
               const fullPost = await wpClient.fetchPost(siteId, post.id, pt.rest_base);
               analyses.push(analyzeContent(fullPost));
-            } catch {
+            } catch (_e: unknown) {
               // If individual fetch fails, analyze the list version
               analyses.push(analyzeContent(post));
             }
           }
-        } catch {
+        } catch (_e: unknown) {
           logger.warn('Could not sample post type', { siteId, postType: pt.slug });
         }
       }

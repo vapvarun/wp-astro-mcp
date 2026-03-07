@@ -229,7 +229,7 @@ export const outputHandlers: Record<string, (params: unknown) => Promise<unknown
         try {
           const full = await wpClient.fetchPost(siteId, post.id, restBase);
           fullPosts.push(full);
-        } catch {
+        } catch (_e: unknown) {
           fullPosts.push(post);
         }
       }

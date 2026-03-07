@@ -1,7 +1,7 @@
 /**
  * Router Tools - Token-optimized wrapper
  *
- * Exposes 3 tools instead of 87+:
+ * Exposes 3 tools instead of 55:
  * - wp_astro_run: Execute any action
  * - wp_astro_help: List available actions by category
  * - wp_astro_describe: Get full schema for an action

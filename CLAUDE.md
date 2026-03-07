@@ -50,7 +50,7 @@ data/
 
 ## Key Patterns
 
-- **Router mode**: 3 tools expose 87+ actions via wp_astro_run
+- **Router mode**: 3 tools expose 55 actions via wp_astro_run
 - **Singleton managers**: SiteManager, DatabaseManager, Logger
 - **ES Modules**: `"type": "module"`, `import.meta.url` for paths
 - **Zod validation**: All tool inputs validated with Zod schemas

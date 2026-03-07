@@ -149,7 +149,7 @@ export const exportHandlers: Record<string, (params: unknown) => Promise<unknown
           });
           counts.push({ type: pt.slug, name: pt.name, restBase: pt.rest_base, count: pagination.total });
           totalPosts += pagination.total;
-        } catch {
+        } catch (_e: unknown) {
           counts.push({ type: pt.slug, name: pt.name, restBase: pt.rest_base, count: 0 });
         }
       }
@@ -477,8 +477,8 @@ export const exportHandlers: Record<string, (params: unknown) => Promise<unknown
             for (const issue of issues) {
               issueBreakdown[issue.code] = (issueBreakdown[issue.code] || 0) + 1;
             }
-          } catch {
-            // Invalid JSON
+          } catch (_e: unknown) {
+            // Invalid JSON in issues field — skip
           }
         }
       }
@@ -588,7 +588,14 @@ async function processNextBatch(
       // Convert and write
       const result = writePost(post, site, outputDir);
 
-      // Update state
+      // Compute content hash for change detection (used by sync)
+      const crypto = await import('crypto');
+      const contentHash = crypto.createHash('md5')
+        .update(post.content?.rendered || '')
+        .update(post.modified_gmt || '')
+        .digest('hex');
+
+      // Update state (including wp_modified_gmt for sync tracking)
       db.prepare(
         `UPDATE export_posts SET
           status = 'completed',
@@ -598,6 +605,8 @@ async function processNextBatch(
           input_size = ?,
           output_size = ?,
           conversion_ms = ?,
+          content_hash = ?,
+          wp_modified_gmt = ?,
           issues = ?,
           updated_at = datetime('now')
         WHERE id = ?`
@@ -608,6 +617,8 @@ async function processNextBatch(
         result.inputSize,
         result.outputSize,
         result.conversionMs,
+        contentHash,
+        post.modified_gmt || null,
         result.issueCount > 0 ? '[]' : null,
         row.id
       );

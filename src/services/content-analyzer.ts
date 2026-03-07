@@ -62,7 +62,7 @@ function detectPageBuilder(content: string, meta?: Record<string, unknown>): Pag
       try {
         const parsed = JSON.parse(elementorData);
         elementCount = Array.isArray(parsed) ? countElements(parsed) : 0;
-      } catch {
+      } catch (_e: unknown) {
         elementCount = (elementorData.match(/"elType"/g) || []).length;
       }
     }

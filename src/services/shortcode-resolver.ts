@@ -100,7 +100,7 @@ function getSiteRules(siteId: string): Map<string, ShortcodeRule> {
         config: row.config ? JSON.parse(row.config) : undefined,
       });
     }
-  } catch {
+  } catch (_e: unknown) {
     // Database may not be initialized yet
   }
   return rules;

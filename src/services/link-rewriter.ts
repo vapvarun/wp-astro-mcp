@@ -103,7 +103,7 @@ function getUrlMap(siteId: string): Map<string, string> {
     for (const row of rows) {
       map.set(row.wp_url, row.astro_url);
     }
-  } catch {
+  } catch (_e: unknown) {
     // Database may not be initialized
   }
   return map;
