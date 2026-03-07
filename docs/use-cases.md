@@ -213,19 +213,44 @@ This runs the full conversion pipeline and reports output paths, sizes, and issu
 
 ---
 
-## 11. Incremental Content Sync
+## 11. Ongoing Content Sync (WordPress as CMS)
 
-**Scenario:** WordPress is still active and new content is published daily. You want to keep the Astro site in sync.
+**Scenario:** WordPress is your content management system. Editors publish 3-5 posts per day, update old content regularly, and occasionally delete outdated pages. The Astro site must stay current.
 
-**Approach:**
+**Initial export:**
 ```
-# Initial export
-export_start
-
-# Periodic sync — only new/modified posts
-site_export_config → date_after: "2025-03-01"
-export_start → creates a new job for recent posts only
+export_plan → export_start → export_resume → export_validate
+github_init → github_create_repo → github_push
 ```
+
+**Daily sync (manual):**
+```
+sync_check → shows 4 new posts, 2 updated, 1 deleted
+sync_full → fetches new posts, re-converts updated ones, removes deleted file
+github_push → deploys to Vercel/Netlify
+```
+
+**Automated daily sync (GitHub Actions):**
+```
+sync_schedule → platform: "github-actions", interval: "daily"
+# Creates .github/workflows/sync-content.yml
+# Runs at 6am UTC, syncs changes, auto-commits and pushes
+github_push → pushes the workflow file
+```
+
+**Real-time sync (webhooks):**
+```
+sync_schedule → platform: "vercel"  # or "netlify"
+# Creates an API endpoint that WordPress calls on every post save
+# Triggers a new build automatically
+```
+
+**What it handles:**
+- New posts, pages, and custom post types → new Markdown files
+- Updated content (text, images, SEO, ACF) → file overwritten
+- Slug changes → old file deleted, new file created, URL map updated
+- Deleted/trashed posts → local file removed
+- Category/tag changes → frontmatter updated on next sync
 
 ---
 

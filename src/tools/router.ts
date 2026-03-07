@@ -77,6 +77,15 @@ export const TOOL_CATEGORIES: Record<string, string[]> = {
     'export_validate',
     'export_cleanup',
   ],
+  sync: [
+    'sync_check',
+    'sync_pull',
+    'sync_delete',
+    'sync_full',
+    'sync_status',
+    'sync_schedule',
+    'sync_reset',
+  ],
 };
 
 /**
@@ -89,14 +98,16 @@ export const routerTools: Tool[] = [
 
 Common workflows:
 1. Add site: site_add → site_analyze → site_export_config
-2. Preview: export_preview (see sample converted posts)
-3. Export: export_plan → export_start → export_progress
+2. Preview: convert_preview (see sample converted posts)
+3. Export: export_plan → export_start → export_resume → export_validate
 4. Publish: github_init → github_create_repo → github_push
+5. Ongoing sync: sync_check → sync_pull → github_push
+6. Auto sync: sync_full (check + pull + delete + commit in one step)
 
 Quick actions:
 - site_list — see all registered sites
-- site_analyze — count content and detect capabilities
-- export_preview — convert 5 sample posts to review`,
+- sync_check — see what changed in WordPress since last sync
+- sync_full — sync everything and optionally auto-commit`,
     inputSchema: {
       type: 'object',
       properties: {

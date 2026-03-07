@@ -15,6 +15,7 @@ import { transformTools, transformHandlers } from './transform.js';
 import { outputTools, outputHandlers } from './output.js';
 import { githubTools, githubHandlers } from './github.js';
 import { exportTools, exportHandlers } from './export.js';
+import { syncTools, syncHandlers } from './sync.js';
 
 /**
  * All individual tool definitions
@@ -26,6 +27,7 @@ export const allTools: Tool[] = [
   ...outputTools,
   ...githubTools,
   ...exportTools,
+  ...syncTools,
 ];
 
 /**
@@ -41,6 +43,7 @@ export const allHandlers: Record<
   ...outputHandlers,
   ...githubHandlers,
   ...exportHandlers,
+  ...syncHandlers,
 };
 
 /**

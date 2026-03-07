@@ -320,6 +320,43 @@ github_deploy_config → Generate Vercel/Netlify/Cloudflare config
 | `export_validate` | Verify output: check files exist, count issues, confirm completeness. |
 | `export_cleanup` | Delete export job data from database (does not delete files). |
 
+### Content Sync (7 tools)
+
+WordPress is a living CMS — people publish new posts, update content, change images, and delete old pages daily. The sync tools keep your Astro site current without re-running a full export.
+
+| Tool | Description |
+|------|-------------|
+| `sync_check` | Compare WordPress vs local files. Report new, updated, and deleted posts without making changes. |
+| `sync_pull` | Fetch and write only changed content. Handles new posts, updated posts, and slug changes. |
+| `sync_delete` | Remove local files for posts deleted/trashed in WordPress. Cleans up URL map entries. |
+| `sync_full` | Complete sync in one command: check → pull → delete → optionally commit to git. |
+| `sync_status` | Show sync history: last sync time, changes made, error counts. |
+| `sync_schedule` | Generate automated sync config: GitHub Actions workflow, cron script, Netlify/Vercel webhooks. |
+| `sync_reset` | Clear sync tracking to force a full re-check on next sync. |
+
+**How it works:**
+1. Queries WordPress REST API for posts modified after the last sync
+2. Compares `modified_gmt` timestamps against stored values in SQLite
+3. New posts (not in DB) → fetched, converted, written as new Markdown files
+4. Updated posts (newer `modified_gmt`) → re-fetched, re-converted, file overwritten
+5. Deleted posts (404 from WordPress) → local file removed, URL map cleaned up
+6. Slug changes → old file deleted, new file written, redirects updated
+
+**Sync workflows:**
+```
+# Manual sync — check what changed, then pull
+sync_check → sync_pull → github_commit → github_push
+
+# One-command sync with auto-commit
+sync_full → github_push
+
+# Automated daily sync via GitHub Actions
+sync_schedule (platform: github-actions, interval: daily)
+
+# Real-time sync via WordPress webhooks
+sync_schedule (platform: vercel)  # or netlify
+```
+
 ---
 
 ## Configuration
@@ -499,6 +536,17 @@ All registered post types are auto-detected and can be exported. Each CPT gets i
 
 **Q: Does it handle WordPress shortcodes?**
 Yes. 20+ shortcodes are handled out of the box (gallery, video, audio, caption, WPBakery elements, Divi modules, Contact Form 7, WPForms, Gravity Forms, buttons, tabs, accordions). You can configure additional shortcodes per-site with `shortcode_configure`.
+
+### Content Sync & Ongoing Updates
+
+**Q: How do I keep the Astro site updated when WordPress content changes?**
+Use the sync tools: `sync_check` to see what changed, `sync_pull` to fetch updates, or `sync_full` to do everything in one command. Sync detects new posts, updated content, slug changes, and deleted posts by comparing `modified_gmt` timestamps.
+
+**Q: Can I automate the sync?**
+Yes. `sync_schedule` generates GitHub Actions workflows (cron-based), cron scripts, or Netlify/Vercel webhooks for real-time sync on every WordPress post save.
+
+**Q: What happens when a post is updated in WordPress?**
+On the next sync, the tool detects the newer `modified_gmt` timestamp, re-fetches the post from the REST API, re-converts it to Markdown with updated frontmatter (categories, SEO, ACF, images), and overwrites the local file.
 
 ### Export & Deployment
 

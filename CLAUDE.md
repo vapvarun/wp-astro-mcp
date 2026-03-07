@@ -20,6 +20,7 @@ src/
     output.ts           — Output & media tools (7 tools: scaffold, write, redirects, media)
     github.ts           — GitHub tools (6 tools: init, repo, commit, push, status, deploy)
     export.ts           — Export pipeline tools (7 tools: plan, start, resume, progress, retry, validate, cleanup)
+    sync.ts             — Content sync tools (7 tools: check, pull, delete, full, status, schedule, reset)
   schemas/
     sites.ts            — Zod schemas for site tools
     extract.ts          — Zod schemas for extract tools
@@ -27,6 +28,7 @@ src/
     output.ts           — Zod schemas for output/media tools
     github.ts           — Zod schemas for GitHub tools
     export.ts           — Zod schemas for export pipeline tools
+    sync.ts             — Zod schemas for content sync tools
   services/
     wp-rest-client.ts   — WordPress REST API client (rate limiting, retry, auth)
     content-analyzer.ts — Content analysis (shortcodes, blocks, page builders, embeds)
@@ -79,3 +81,4 @@ npm run build
 - Phase 4: Output (Astro scaffolding, content writing, redirects, media) ✓
 - Phase 5: GitHub (git init, repo creation, commit, push, deploy config) ✓
 - Phase 6: Export pipeline (batch processing, progress, resume, retry, validate) ✓
+- Phase 7: Content Sync (change detection, pull, delete, full sync, scheduling) ✓

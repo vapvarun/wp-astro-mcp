@@ -136,6 +136,70 @@ Gutenberg block comments (`<!-- wp:paragraph -->`) are stripped. The HTML conten
 
 ---
 
+## Content Sync & Ongoing Updates
+
+### How do I keep my Astro site updated when WordPress content changes?
+
+Use the sync tools. After the initial export, you don't need to re-run a full export — just sync:
+
+```
+sync_check → see what changed since last sync
+sync_pull  → fetch and write only changed content
+sync_full  → do everything in one step (check + pull + delete + commit)
+```
+
+### What triggers a sync?
+
+The sync detects changes by comparing WordPress `modified_gmt` timestamps against stored values in SQLite. Any of these WordPress actions will be picked up:
+
+- New post/page/CPT published
+- Existing post content edited
+- Featured image changed
+- Category/tag assignment changed
+- SEO metadata updated (Yoast/RankMath)
+- ACF field values changed
+- Post slug changed (automatically deletes old file, writes new one)
+- Post deleted or trashed
+
+### Can I automate the sync?
+
+Yes. `sync_schedule` generates platform-specific automation:
+
+| Platform | What it generates | Trigger |
+|----------|------------------|---------|
+| GitHub Actions | `.github/workflows/sync-content.yml` | Cron schedule (hourly/daily/weekly) |
+| Cron | `scripts/sync.sh` | System cron job |
+| Netlify | `netlify/functions/sync-webhook.mts` | WordPress webhook on post save |
+| Vercel | `api/sync-webhook.ts` | WordPress webhook on post save |
+
+For **scheduled sync** (GitHub Actions, cron): the sync runs at fixed intervals, checks for changes, and pushes if anything changed.
+
+For **real-time sync** (Netlify/Vercel webhooks): WordPress sends a webhook on every post save/update/delete, which triggers a new build.
+
+### What happens if a post slug changes?
+
+The sync detects slug changes by matching WordPress post IDs. When a slug changes:
+1. The old Markdown file is deleted
+2. A new file is written with the new slug
+3. The URL map is updated
+4. Run `generate_redirects` after sync to create redirect rules from old URL to new URL
+
+### What about deleted posts?
+
+`sync_delete` checks each locally exported post ID against WordPress. If WordPress returns 404, the local file is removed and the URL map entry is cleaned up. Use `sync_full` with `include_deleted: true` to handle this automatically.
+
+### Does sync handle new categories or authors?
+
+Yes. When a post is synced, its embedded category/tag/author data comes with it. The frontmatter is rebuilt from scratch, so any taxonomy or author changes are automatically reflected.
+
+### Can I force a full re-sync?
+
+Yes. Two options:
+- `sync_pull` with `force: true` — re-fetches and re-converts every exported post
+- `sync_reset` then `sync_pull` — clears timestamp tracking, then syncs everything
+
+---
+
 ## Export & Performance
 
 ### How long does an export take?
