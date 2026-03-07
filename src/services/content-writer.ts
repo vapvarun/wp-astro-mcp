@@ -307,6 +307,150 @@ export function rewriteMediaInFiles(
   return { filesModified, replacements: totalReplacements };
 }
 
+// ============================================================
+// JSON Data Mode — single file per collection for large sites
+// ============================================================
+
+export interface JsonPostEntry {
+  id: number;
+  title: string;
+  slug: string;
+  date: string;
+  modified?: string;
+  author?: { name: string; id: number; slug: string; avatar?: string };
+  status: string;
+  categories?: Array<{ name: string; slug: string }>;
+  tags?: Array<{ name: string; slug: string }>;
+  excerpt?: string;
+  content: string;
+  featuredImage?: { url: string; alt: string; width?: number; height?: number };
+  seo?: { title?: string; description?: string; canonical?: string; ogImage?: string; noindex?: boolean };
+  readingTime?: number;
+  wordCount?: number;
+  wpPostId: number;
+  wpUrl: string;
+  postType: string;
+  acf?: Record<string, unknown>;
+  taxonomies?: Record<string, Array<{ name: string; slug: string }>>;
+}
+
+/**
+ * Write or update a JSON collection file for a post type.
+ * Reads existing file, upserts the post entry, writes back.
+ * This avoids Astro's markdown pipeline — critical for sites with 500+ posts.
+ */
+export function writePostToJson(
+  post: WPPost,
+  site: SiteConfig,
+  outputDir: string,
+  options: { dryRun?: boolean } = {}
+): WriteResult {
+  const result = convertPost(post, site);
+  const collectionDir = getCollectionDirForType(post.type, site);
+  const jsonDir = path.join(outputDir, 'src', 'data');
+  const jsonFile = `${collectionDir}.json`;
+  const jsonPath = path.join(jsonDir, jsonFile);
+  const relPath = path.join('src', 'data', jsonFile);
+
+  // Build JSON entry from frontmatter + body
+  const entry: JsonPostEntry = {
+    id: post.id,
+    title: result.frontmatter.title,
+    slug: result.frontmatter.slug,
+    date: result.frontmatter.date,
+    modified: result.frontmatter.modified,
+    author: result.frontmatter.author,
+    status: result.frontmatter.status,
+    categories: result.frontmatter.categories,
+    tags: result.frontmatter.tags,
+    excerpt: result.frontmatter.excerpt,
+    content: post.content?.rendered || '',
+    featuredImage: result.frontmatter.featuredImage,
+    seo: result.frontmatter.seo,
+    readingTime: result.frontmatter.readingTime,
+    wordCount: result.frontmatter.wordCount,
+    wpPostId: result.frontmatter.wpPostId,
+    wpUrl: result.frontmatter.wpUrl,
+    postType: result.frontmatter.postType,
+    acf: result.frontmatter.acf,
+    taxonomies: result.frontmatter.taxonomies,
+  };
+
+  if (!options.dryRun) {
+    fs.mkdirSync(jsonDir, { recursive: true });
+
+    // Read existing JSON array, upsert this post
+    let posts: JsonPostEntry[] = [];
+    if (fs.existsSync(jsonPath)) {
+      try {
+        posts = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+      } catch (_e: unknown) {
+        posts = [];
+      }
+    }
+
+    // Replace existing entry or append
+    const existingIdx = posts.findIndex(p => p.wpPostId === post.id);
+    if (existingIdx >= 0) {
+      posts[existingIdx] = entry;
+    } else {
+      posts.push(entry);
+    }
+
+    // Sort by date descending
+    posts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    fs.writeFileSync(jsonPath, JSON.stringify(posts, null, 2), 'utf-8');
+
+    // Register URL mapping
+    const safeSlug = sanitize(post.slug || `post-${post.id}`).toLowerCase();
+    const wpPath = new URL(post.link).pathname;
+    const astroPath = `/${collectionDir}/${safeSlug}`;
+    registerUrlMapping(site.id, wpPath, astroPath, post.type, post.id);
+  }
+
+  const safeSlug = sanitize(post.slug || `post-${post.id}`).toLowerCase();
+
+  return {
+    postId: post.id,
+    title: result.frontmatter.title,
+    slug: safeSlug,
+    outputPath: relPath,
+    inputSize: result.inputSize,
+    outputSize: JSON.stringify(entry).length,
+    conversionMs: result.conversionMs,
+    issueCount: result.issues.length,
+    written: !options.dryRun,
+  };
+}
+
+/**
+ * Remove a post from a JSON collection file
+ */
+export function removePostFromJson(
+  wpPostId: number,
+  postType: string,
+  site: SiteConfig,
+  outputDir: string,
+): boolean {
+  const collectionDir = getCollectionDirForType(postType, site);
+  const jsonPath = path.join(outputDir, 'src', 'data', `${collectionDir}.json`);
+
+  if (!fs.existsSync(jsonPath)) return false;
+
+  try {
+    const posts: JsonPostEntry[] = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+    const filtered = posts.filter(p => p.wpPostId !== wpPostId);
+
+    if (filtered.length === posts.length) return false; // Not found
+
+    fs.writeFileSync(jsonPath, JSON.stringify(filtered, null, 2), 'utf-8');
+    return true;
+  } catch (_e: unknown) {
+    return false;
+  }
+}
+
 function isHierarchical(post: WPPost): boolean {
   return post.type === 'page' || !!post.parent;
 }

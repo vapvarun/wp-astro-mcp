@@ -8,7 +8,7 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { siteManager } from '../config/sites.js';
 import { wpClient } from '../services/wp-rest-client.js';
 import { database } from '../config/database.js';
-import { writePost } from '../services/content-writer.js';
+import { writePost, writePostToJson, removePostFromJson } from '../services/content-writer.js';
 import { formatSuccessResponse, formatErrorResponse, ValidationError } from '../utils/errors.js';
 import {
   syncCheckSchema,
@@ -396,7 +396,10 @@ async function pullChanges(
       const post = await wpClient.fetchPost(siteId, newPost.id, restBase);
 
       if (!options.dryRun) {
-        const writeResult = writePost(post, site, outputDir);
+        const useJsonMode = site.export?.content_format === 'json';
+        const writeResult = useJsonMode
+          ? writePostToJson(post, site, outputDir)
+          : writePost(post, site, outputDir);
 
         // Register in export_posts
         db.prepare(
@@ -441,7 +444,10 @@ async function pullChanges(
           }
         }
 
-        const writeResult = writePost(post, site, outputDir);
+        const useJsonMode = site.export?.content_format === 'json';
+        const writeResult = useJsonMode
+          ? writePostToJson(post, site, outputDir)
+          : writePost(post, site, outputDir);
 
         // Update slug change record with new path
         const slugChange = result.slugChanges.find(sc => sc.postId === post.id);
@@ -480,10 +486,35 @@ function deleteLocalFiles(
   dryRun: boolean
 ): { deleted: number; notFound: number } {
   const db = database.getDatabase();
+  const site = siteManager.getSite(siteId);
+  const useJsonMode = site.export?.content_format === 'json';
   let deleted = 0;
   let notFound = 0;
 
   for (const post of deletedPosts) {
+    // JSON mode: remove from JSON file instead of deleting .md file
+    if (useJsonMode) {
+      if (!dryRun) {
+        // Determine post type from export_posts
+        const exportPost = db.prepare(
+          "SELECT post_type FROM export_posts WHERE site_id = ? AND wp_post_id = ?"
+        ).get(siteId, post.id) as { post_type: string } | undefined;
+
+        const postType = exportPost?.post_type || 'post';
+        const removed = removePostFromJson(post.id, postType, site, outputDir);
+
+        if (removed) {
+          db.prepare("DELETE FROM export_posts WHERE site_id = ? AND wp_post_id = ?").run(siteId, post.id);
+          db.prepare("DELETE FROM url_map WHERE site_id = ? AND wp_post_id = ?").run(siteId, post.id);
+        }
+
+        removed ? deleted++ : notFound++;
+      } else {
+        deleted++;
+      }
+      continue;
+    }
+
     if (post.outputPath) {
       const fullPath = path.join(outputDir, post.outputPath);
 

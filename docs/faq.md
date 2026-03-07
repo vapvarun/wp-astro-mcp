@@ -202,6 +202,23 @@ Yes. Two options:
 
 ## Export & Performance
 
+### My Astro build runs out of memory with hundreds of posts
+
+This is the most common issue with large WordPress migrations. Astro's content collection parses each `.md` file through its markdown pipeline — 500+ files with HTML content will eat 4GB+ of memory.
+
+**Solution:** Use JSON mode:
+```
+site_export_config → content_format: "json"
+```
+
+Instead of 500 individual `.md` files, the exporter writes a single `src/data/blog.json`. Astro pages import this JSON directly and render content via `set:html`. No markdown parsing overhead.
+
+This also speeds up builds significantly — a 2,000 post site drops from ~4GB / 15 minutes to ~500MB / 3 minutes.
+
+### Should I use astro-compress?
+
+**No.** The scaffolder intentionally does not include `astro-compress`. After building thousands of HTML pages, the compression plugin tries to minify every single one, which pushes build+deploy time past Cloudflare/Netlify timeouts. All major deploy platforms (Cloudflare, Vercel, Netlify) already apply brotli/gzip compression at the edge.
+
 ### How long does an export take?
 
 Rough estimates (depends on server speed and rate limiting):

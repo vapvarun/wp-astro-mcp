@@ -30,7 +30,7 @@ export const siteUpdateSchema = z.object({
 export const siteExportConfigSchema = z.object({
   site_id: z.string().describe('Site ID to configure'),
   output_dir: z.string().optional().describe('Local directory for Astro output'),
-  content_format: z.enum(['md', 'mdx']).optional().describe('Markdown format'),
+  content_format: z.enum(['md', 'mdx', 'json']).optional().describe('Output format: md, mdx, or json (recommended for 500+ posts — avoids Astro markdown OOM)'),
   media_strategy: z
     .enum(['rewrite', 'download', 'keep'])
     .optional()

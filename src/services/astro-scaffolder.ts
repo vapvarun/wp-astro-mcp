@@ -29,6 +29,8 @@ export function scaffoldProject(
   const config = site.export || {};
   const componentLib = config.component_library || 'none';
   const deployPlatform = config.deploy_platform || 'none';
+  const contentFormat = config.content_format || 'md';
+  const useJsonMode = contentFormat === 'json';
 
   // Ensure output directory exists
   fs.mkdirSync(outputDir, { recursive: true });
@@ -62,23 +64,25 @@ export function scaffoldProject(
     },
   }, null, 2));
 
-  // 4. Content config
-  writeFile('src/content.config.ts', generateContentConfig(site));
+  // 4. Content config (skip for JSON mode — no content collections)
+  if (!useJsonMode) {
+    writeFile('src/content.config.ts', generateContentConfig(site));
+  }
 
   // 5. Base layout
   writeFile('src/layouts/BaseLayout.astro', generateBaseLayout(site));
 
   // 6. Blog post layout
-  writeFile('src/layouts/PostLayout.astro', generatePostLayout());
+  writeFile('src/layouts/PostLayout.astro', useJsonMode ? generatePostLayoutJson() : generatePostLayout());
 
   // 7. Index page
-  writeFile('src/pages/index.astro', generateIndexPage(site));
+  writeFile('src/pages/index.astro', useJsonMode ? generateIndexPageJson(site) : generateIndexPage(site));
 
   // 8. Blog listing page
-  writeFile('src/pages/blog/index.astro', generateBlogListPage());
+  writeFile('src/pages/blog/index.astro', useJsonMode ? generateBlogListPageJson() : generateBlogListPage());
 
   // 9. Blog post page (dynamic route)
-  writeFile('src/pages/blog/[...slug].astro', generateBlogPostPage());
+  writeFile('src/pages/blog/[...slug].astro', useJsonMode ? generateBlogPostPageJson() : generateBlogPostPage());
 
   // 10. 404 page
   writeFile('src/pages/404.astro', generate404Page());
@@ -98,17 +102,22 @@ export function scaffoldProject(
   // 13. .gitignore
   writeFile('.gitignore', `node_modules/\ndist/\n.astro/\n.env\n*.log\n`);
 
-  // 14. Content directories
-  const postTypes = site.post_types || [
-    { slug: 'post', rest_base: 'posts', name: 'Posts', hierarchical: false, has_archive: true },
-    { slug: 'page', rest_base: 'pages', name: 'Pages', hierarchical: true, has_archive: false },
-  ];
+  // 14. Content directories (or data directory for JSON mode)
+  if (useJsonMode) {
+    fs.mkdirSync(path.join(outputDir, 'src', 'data'), { recursive: true });
+    created.push('src/data/');
+  } else {
+    const postTypes = site.post_types || [
+      { slug: 'post', rest_base: 'posts', name: 'Posts', hierarchical: false, has_archive: true },
+      { slug: 'page', rest_base: 'pages', name: 'Pages', hierarchical: true, has_archive: false },
+    ];
 
-  for (const pt of postTypes) {
-    if (['attachment', 'wp_block', 'wp_template', 'wp_template_part', 'wp_navigation', 'wp_global_styles'].includes(pt.slug)) continue;
-    const dir = getCollectionDir(pt.slug, config.content_type_config);
-    fs.mkdirSync(path.join(outputDir, 'src', 'content', dir), { recursive: true });
-    created.push(`src/content/${dir}/`);
+    for (const pt of postTypes) {
+      if (['attachment', 'wp_block', 'wp_template', 'wp_template_part', 'wp_navigation', 'wp_global_styles'].includes(pt.slug)) continue;
+      const dir = getCollectionDir(pt.slug, config.content_type_config);
+      fs.mkdirSync(path.join(outputDir, 'src', 'content', dir), { recursive: true });
+      created.push(`src/content/${dir}/`);
+    }
   }
 
   // 15. Public directory
@@ -508,5 +517,155 @@ export async function GET(context: { site: URL }) {
     })),
   });
 }
+`;
+}
+
+// ============================================================
+// JSON Mode Page Generators
+// For large sites (500+ posts), skip content collections entirely.
+// Content stays as HTML, imported from a single JSON file.
+// This avoids Astro's markdown parsing pipeline which OOMs on large sites.
+// ============================================================
+
+function generatePostLayoutJson(): string {
+  return `---
+import BaseLayout from './BaseLayout.astro';
+
+interface Props {
+  post: {
+    title: string;
+    date: string;
+    author?: { name: string };
+    categories?: Array<{ name: string; slug: string }>;
+    tags?: Array<{ name: string; slug: string }>;
+    featuredImage?: { url: string; alt: string; width?: number; height?: number };
+    excerpt?: string;
+    content: string;
+    seo?: { title?: string; description?: string; ogImage?: string };
+    readingTime?: number;
+  };
+}
+
+const { post } = Astro.props;
+const pageTitle = post.seo?.title || post.title;
+const pageDescription = post.seo?.description || post.excerpt || '';
+---
+
+<BaseLayout title={pageTitle} description={pageDescription} ogImage={post.seo?.ogImage || post.featuredImage?.url}>
+  <article>
+    <header>
+      <h1>{post.title}</h1>
+      <div class="meta">
+        {post.date && <time datetime={post.date}>{new Date(post.date).toLocaleDateString()}</time>}
+        {post.author && <span>by {post.author.name}</span>}
+        {post.readingTime && <span>{post.readingTime} min read</span>}
+      </div>
+      {post.categories && post.categories.length > 0 && (
+        <div class="categories">
+          {post.categories.map((cat) => (
+            <a href={\`/blog/category/\${cat.slug}\`}>{cat.name}</a>
+          ))}
+        </div>
+      )}
+    </header>
+
+    {post.featuredImage && (
+      <img
+        src={post.featuredImage.url}
+        alt={post.featuredImage.alt || post.title}
+        width={post.featuredImage.width}
+        height={post.featuredImage.height}
+        loading="eager"
+      />
+    )}
+
+    <div class="content" set:html={post.content} />
+
+    {post.tags && post.tags.length > 0 && (
+      <footer>
+        <div class="tags">
+          {post.tags.map((tag) => (
+            <a href={\`/blog/tag/\${tag.slug}\`}>{tag.name}</a>
+          ))}
+        </div>
+      </footer>
+    )}
+  </article>
+</BaseLayout>
+`;
+}
+
+function generateIndexPageJson(site: SiteConfig): string {
+  const title = site.site_title || site.name;
+  return `---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import posts from '../data/blog.json';
+
+const latest = posts.slice(0, 10);
+---
+
+<BaseLayout>
+  <h1>${title}</h1>
+  <section>
+    <h2>Latest Posts</h2>
+    <ul>
+      {latest.map(post => (
+        <li>
+          <a href={\`/blog/\${post.slug}\`}>
+            <h3>{post.title}</h3>
+          </a>
+          {post.excerpt && <p>{post.excerpt}</p>}
+          <time datetime={post.date}>{new Date(post.date).toLocaleDateString()}</time>
+        </li>
+      ))}
+    </ul>
+  </section>
+</BaseLayout>
+`;
+}
+
+function generateBlogListPageJson(): string {
+  return `---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import posts from '../../data/blog.json';
+---
+
+<BaseLayout title="Blog">
+  <h1>Blog</h1>
+  <ul>
+    {posts.map(post => (
+      <li>
+        <a href={\`/blog/\${post.slug}\`}>
+          <h2>{post.title}</h2>
+        </a>
+        {post.excerpt && <p>{post.excerpt}</p>}
+        <div class="meta">
+          <time datetime={post.date}>{new Date(post.date).toLocaleDateString()}</time>
+          {post.author && <span>by {post.author.name}</span>}
+          {post.readingTime && <span>{post.readingTime} min read</span>}
+        </div>
+      </li>
+    ))}
+  </ul>
+</BaseLayout>
+`;
+}
+
+function generateBlogPostPageJson(): string {
+  return `---
+import PostLayout from '../../layouts/PostLayout.astro';
+import posts from '../../data/blog.json';
+
+export function getStaticPaths() {
+  return posts.map(post => ({
+    params: { slug: post.slug },
+    props: { post },
+  }));
+}
+
+const { post } = Astro.props;
+---
+
+<PostLayout post={post} />
 `;
 }

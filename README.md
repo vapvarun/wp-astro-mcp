@@ -401,7 +401,7 @@ sync_schedule (platform: vercel)  # or netlify
 | Option | Values | Description |
 |--------|--------|-------------|
 | `output_dir` | Path | Where the Astro project is created |
-| `content_format` | `md`, `mdx` | Markdown or MDX output |
+| `content_format` | `md`, `mdx`, `json` | Markdown, MDX, or JSON output. **Use `json` for sites with 500+ posts** — avoids Astro's markdown parsing OOM. |
 | `media_strategy` | `keep`, `rewrite`, `download` | How to handle media URLs |
 | `media_domain` | Domain | New domain for media (used with `rewrite` strategy) |
 | `include_post_types` | Array | Only export these post types |
@@ -607,9 +607,26 @@ In a SQLite database at `data/wp-astro.db` (gitignored). Contains export job sta
 - Run `convert_preview` to inspect specific posts
 - The pipeline strips builder wrappers and keeps content — some complex layouts may need manual review
 
+### Astro build OOM with many posts (500+)
+
+If the **generated Astro site** runs out of memory during `astro build`, the problem is Astro's content collection parsing 500+ markdown files. Each `.md` file goes through Astro's markdown pipeline, which eats ~2MB per file.
+
+**Fix:** Switch to JSON mode in your export config:
+```
+site_export_config → content_format: "json"
+```
+
+This writes a single `src/data/blog.json` instead of individual `.md` files. Astro imports the JSON directly — no markdown parsing, no OOM. Content stays as HTML and is rendered via `set:html`.
+
+| Posts | Recommended Format |
+|-------|-------------------|
+| < 500 | `md` (content collections) |
+| 500-2000 | `json` (recommended) |
+| 2000+ | `json` (required for CI/CD) |
+
 ### Build fails with "JavaScript heap out of memory"
 
-This happens on CI/CD platforms with limited memory (Cloudflare Pages ~4GB, Netlify ~3GB). The TypeScript compiler needs more heap space for large projects.
+If the **MCP server build** (`npm run build`) runs out of memory, the problem is TypeScript compilation on CI/CD platforms with limited memory (Cloudflare Pages ~4GB, Netlify ~3GB).
 
 **Quick fix:** Use the built-in memory-optimized build scripts:
 ```bash

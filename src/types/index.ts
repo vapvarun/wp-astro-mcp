@@ -72,7 +72,7 @@ export interface ContentStats {
 
 export interface ExportConfig {
   output_dir?: string;
-  content_format?: 'md' | 'mdx';
+  content_format?: 'md' | 'mdx' | 'json';
   media_strategy?: 'rewrite' | 'download' | 'keep';
   media_domain?: string;
   include_post_types?: string[];

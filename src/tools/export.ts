@@ -8,7 +8,7 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { siteManager } from '../config/sites.js';
 import { wpClient } from '../services/wp-rest-client.js';
 import { database } from '../config/database.js';
-import { writePost } from '../services/content-writer.js';
+import { writePost, writePostToJson } from '../services/content-writer.js';
 import { formatSuccessResponse, formatErrorResponse, ValidationError } from '../utils/errors.js';
 import {
   exportPlanSchema,
@@ -585,8 +585,11 @@ async function processNextBatch(
       // Fetch full post
       const post = await wpClient.fetchPost(siteId, row.wp_post_id, restBase);
 
-      // Convert and write
-      const result = writePost(post, site, outputDir);
+      // Convert and write (JSON mode for large sites, markdown for small sites)
+      const useJsonMode = site.export?.content_format === 'json';
+      const result = useJsonMode
+        ? writePostToJson(post, site, outputDir)
+        : writePost(post, site, outputDir);
 
       // Compute content hash for change detection (used by sync)
       const crypto = await import('crypto');
