@@ -30,7 +30,8 @@ src/
     output.ts           — Output & media tools (7 tools: scaffold, write, redirects, media)
     github.ts           — GitHub tools (6 tools: init, repo, commit, push, status, deploy)
     export.ts           — Export pipeline tools (7 tools: plan, start, resume, progress, retry, validate, cleanup)
-    sync.ts             — Content sync tools (7 tools: check, pull, delete, full, status, schedule, reset)
+    sync.ts             — Content sync tools (8 tools: check, pull, delete, full, status, schedule, reset, webhook)
+    wizard.ts           — Setup wizard tool (1 tool: setup_wizard)
   schemas/
     sites.ts            — Zod schemas for site tools
     extract.ts          — Zod schemas for extract tools
@@ -39,6 +40,7 @@ src/
     github.ts           — Zod schemas for GitHub tools
     export.ts           — Zod schemas for export pipeline tools
     sync.ts             — Zod schemas for content sync tools
+    wizard.ts           — Zod schema for setup wizard
   services/
     wp-rest-client.ts   — WordPress REST API client (rate limiting, retry, auth)
     content-analyzer.ts — Content analysis (shortcodes, blocks, page builders, embeds)
@@ -60,7 +62,7 @@ data/
 
 ## Key Patterns
 
-- **Router mode**: 3 tools expose 55 actions via wp_astro_run
+- **Router mode**: 3 tools expose 57 actions via wp_astro_run
 - **Singleton managers**: SiteManager, DatabaseManager, Logger
 - **ES Modules**: `"type": "module"`, `import.meta.url` for paths
 - **Zod validation**: All tool inputs validated with Zod schemas

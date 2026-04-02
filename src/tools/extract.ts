@@ -700,7 +700,7 @@ export const extractHandlers: Record<string, (params: unknown) => Promise<unknow
         next_steps: [
           'Review shortcodes and configure handling via shortcode_map',
           'Run cache_terms and cache_authors before export',
-          'Run export_preview to see sample converted Markdown',
+          'Run convert_preview to see sample converted Markdown',
         ],
       });
     } catch (error) {

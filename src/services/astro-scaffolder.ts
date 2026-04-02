@@ -93,8 +93,10 @@ export function scaffoldProject(
   // 10c. Webhook endpoint for wp-astro-bridge
   writeFile('src/pages/api/hook.ts', generateWebhookEndpoint());
 
-  // 10d. Preview page (SSR -- requires hybrid output mode)
-  writeFile('src/pages/preview.astro', generatePreviewPage(site));
+  // 10d. Preview page (SSR — requires hybrid output mode with an adapter)
+  if (deployPlatform !== 'none') {
+    writeFile('src/pages/preview.astro', generatePreviewPage(site));
+  }
 
   // 11. RSS feed (optional)
   writeFile('src/pages/rss.xml.ts', generateRssFeed(site));
@@ -535,7 +537,7 @@ const posts = (await getCollection('blog'))
 function generateBlogListPaginated(): string {
   return `---
 import type { GetStaticPaths } from 'astro';
-import BaseLayout from '../../../layouts/BaseLayout.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
 import { getCollection } from 'astro:content';
 
 export const getStaticPaths = (async ({ paginate }) => {
@@ -577,8 +579,8 @@ const { page } = Astro.props;
 function generateBlogListPaginatedJson(): string {
   return `---
 import type { GetStaticPaths } from 'astro';
-import BaseLayout from '../../../layouts/BaseLayout.astro';
-import allPosts from '../../../data/blog.json';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import allPosts from '../../data/blog.json';
 
 export const getStaticPaths = (({ paginate }) => {
   return paginate(allPosts, { pageSize: 12 });
