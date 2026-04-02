@@ -93,6 +93,9 @@ export function scaffoldProject(
   // 11. RSS feed (optional)
   writeFile('src/pages/rss.xml.ts', generateRssFeed(site));
 
+  // 11b. JSON Feed
+  writeFile('src/pages/feed.json.ts', useJsonMode ? generateJsonFeedJson(site) : generateJsonFeed(site));
+
   // 12. Deploy platform config
   if (deployPlatform === 'vercel') {
     writeFile('vercel.json', JSON.stringify({ framework: 'astro' }, null, 2));
@@ -371,6 +374,7 @@ const fullTitle = title === siteTitle ? title : \`\${title} | \${siteTitle}\`;
 
   <link rel="sitemap" href="/sitemap-index.xml" />
   <link rel="alternate" type="application/rss+xml" title={siteTitle} href="/rss.xml" />
+  <link rel="alternate" type="application/feed+json" title={siteTitle} href="/feed.json" />
 
   {jsonLd && (
     <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
@@ -701,6 +705,78 @@ export async function GET() {
       description: post.data.excerpt || '',
       link: \`/blog/\${post.data.slug}/\`,
     })),
+  });
+}
+`;
+}
+
+function generateJsonFeed(site: SiteConfig): string {
+  const title = site.site_title || site.name;
+  const description = site.site_tagline || '';
+  const language = site.site_language || 'en';
+  return `import { getCollection } from 'astro:content';
+
+export async function GET() {
+  const posts = (await getCollection('blog'))
+    .filter(post => !post.data.draft)
+    .sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime());
+
+  const siteUrl = import.meta.env.SITE;
+
+  const feed = {
+    version: 'https://jsonfeed.org/version/1.1',
+    title: '${title}',
+    description: '${description}',
+    home_page_url: siteUrl,
+    feed_url: \`\${siteUrl}/feed.json\`,
+    language: '${language}',
+    items: posts.map(post => ({
+      id: \`\${siteUrl}/blog/\${post.data.slug}/\`,
+      url: \`\${siteUrl}/blog/\${post.data.slug}/\`,
+      title: post.data.title,
+      summary: post.data.excerpt || '',
+      date_published: post.data.date,
+      ...(post.data.modified && { date_modified: post.data.modified }),
+      ...(post.data.author && { authors: [{ name: post.data.author.name }] }),
+    })),
+  };
+
+  return new Response(JSON.stringify(feed, null, 2), {
+    headers: { 'Content-Type': 'application/feed+json' },
+  });
+}
+`;
+}
+
+function generateJsonFeedJson(site: SiteConfig): string {
+  const title = site.site_title || site.name;
+  const description = site.site_tagline || '';
+  const language = site.site_language || 'en';
+  return `import allPosts from '../data/blog.json';
+
+export function GET() {
+  const siteUrl = import.meta.env.SITE;
+
+  const feed = {
+    version: 'https://jsonfeed.org/version/1.1',
+    title: '${title}',
+    description: '${description}',
+    home_page_url: siteUrl,
+    feed_url: \`\${siteUrl}/feed.json\`,
+    language: '${language}',
+    items: allPosts.map(post => ({
+      id: \`\${siteUrl}/blog/\${post.slug}/\`,
+      url: \`\${siteUrl}/blog/\${post.slug}/\`,
+      title: post.title,
+      summary: post.excerpt || '',
+      date_published: post.date,
+      ...(post.modified && { date_modified: post.modified }),
+      ...(post.author && { authors: [{ name: post.author.name }] }),
+    })),
+  };
+
+  return new Response(JSON.stringify(feed, null, 2), {
+    headers: { 'Content-Type': 'application/feed+json' },
   });
 }
 `;
