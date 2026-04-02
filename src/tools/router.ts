@@ -86,6 +86,9 @@ export const TOOL_CATEGORIES: Record<string, string[]> = {
     'sync_schedule',
     'sync_reset',
   ],
+  wizard: [
+    'setup_wizard',
+  ],
 };
 
 /**
@@ -132,7 +135,7 @@ Quick actions:
       properties: {
         category: {
           type: 'string',
-          description: 'Filter by category (site, extract, transform, output, media, github, export, sync)',
+          description: 'Filter by category (site, extract, transform, output, media, github, export, sync, wizard)',
         },
       },
     },

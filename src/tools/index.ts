@@ -16,6 +16,7 @@ import { outputTools, outputHandlers } from './output.js';
 import { githubTools, githubHandlers } from './github.js';
 import { exportTools, exportHandlers } from './export.js';
 import { syncTools, syncHandlers } from './sync.js';
+import { wizardTools, wizardHandlers } from './wizard.js';
 
 /**
  * All individual tool definitions
@@ -28,6 +29,7 @@ export const allTools: Tool[] = [
   ...githubTools,
   ...exportTools,
   ...syncTools,
+  ...wizardTools,
 ];
 
 /**
@@ -44,6 +46,7 @@ export const allHandlers: Record<
   ...githubHandlers,
   ...exportHandlers,
   ...syncHandlers,
+  ...wizardHandlers,
 };
 
 /**
