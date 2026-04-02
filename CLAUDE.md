@@ -97,7 +97,7 @@ npm run build
 
 See full spec: `docs/superpowers/specs/2026-04-02-living-bridge-roadmap-design.md`
 
-- Phase 8: Setup wizard + production-ready scaffolding (search, pagination, OG images) — IN PROGRESS
-- Phase 9: wp-astro-bridge WordPress plugin (webhook, preview URL, REST SEO, health endpoint)
-- Phase 10: Webhook-triggered auto-rebuild + reactive sync
-- Phase 11: Draft preview via Astro hybrid SSR
+- Phase 8: Setup wizard + production-ready scaffolding (search, pagination, OG images) ✓
+- Phase 9: wp-astro-bridge WordPress plugin (webhook, preview URL, REST SEO, health endpoint) ✓
+- Phase 10: Webhook-triggered auto-rebuild + reactive sync ✓
+- Phase 11: Draft preview via Astro hybrid SSR ✓

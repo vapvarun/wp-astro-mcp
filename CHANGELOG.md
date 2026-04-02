@@ -2,6 +2,20 @@
 
 All notable changes to WP Astro MCP are documented here.
 
+## [3.0.0] - 2026-04-02
+
+### Added
+- **Phase 10: Webhook auto-rebuild** — `sync_webhook` action processes individual post webhooks from wp-astro-bridge (HMAC-verified, targeted single-post sync)
+- **Phase 10: Deploy hook endpoint** — scaffolded Astro projects include `/api/hook.ts` for receiving webhooks
+- **Phase 10: Bridge detection** — `site_add` auto-detects if wp-astro-bridge is installed
+- **Phase 10: wordpress-plugin sync schedule** — `sync_schedule` supports `wordpress-plugin` platform with setup instructions
+- **Phase 11: Draft preview** — scaffolded Astro projects include `/preview` SSR route for viewing unpublished drafts
+- **Phase 11: Preview banner** — "You are previewing a draft" sticky banner on preview pages
+- **Phase 11: Hybrid output mode** — Astro config switches to `output: 'hybrid'` for SSR preview support
+
+### Changed
+- Astro projects now generate in hybrid mode (static by default, SSR for preview route)
+
 ## [2.2.0] - 2026-04-02
 
 ### Added
