@@ -14,7 +14,7 @@
 
 Running WordPress as a headless CMS with an Astro frontend gives you the best of both worlds: WordPress's mature content management for editors, and Astro's static performance for visitors. But wiring it all up involves dozens of tedious steps: fetching content via API, resolving shortcodes, building frontmatter, setting up content collections, handling media URLs, generating redirects, deploying, and keeping content in sync as editors publish new posts.
 
-This MCP server handles all of it. Tell Claude to set up your Astro frontend, and it orchestrates 55 specialized tools to get it done -- and keeps your Astro site current with every WordPress content change.
+This MCP server handles all of it. Tell Claude to set up your Astro frontend, and it orchestrates 57 specialized tools to get it done -- and keeps your Astro site current with every WordPress content change.
 
 ---
 
@@ -74,6 +74,8 @@ and app password "xxxx xxxx xxxx xxxx xxxx xxxx"
 
 Claude will register the site, auto-detect its capabilities (SEO plugin, ACF, post types, taxonomies), and guide you through setting up the Astro frontend.
 
+**Even faster:** Use `setup_wizard` to do the entire flow in one command -- from WordPress site to deployed Astro frontend in 5 minutes.
+
 ---
 
 ## How It Works
@@ -83,22 +85,21 @@ WordPress (Headless CMS)          WP Astro MCP                      Astro (Publi
 +-----------------+   REST API   +----------------+     Files       +---------------+
 | Posts           |------------->| Extract        |---------------->| content/      |
 | Pages           |              | Transform      |                 | blog/         |
-| CPTs            |              | Scaffold       |                 | pages/        |
-| Media           |              | Write          |                 | layouts/      |
-| SEO             |              | Sync           |                 | pages/        |
-| ACF             |              | SQLite state   |                 | astro.config  |
-| Menus           |              | for resume     |                 | package.json  |
+| CPTs            |              | Scaffold       |                 | /search       |
+| Media           |              | Write          |                 | /preview (SSR)|
+| SEO             |              | Sync           |                 | /api/hook     |
+| ACF             |              | Setup Wizard   |                 | astro.config  |
+| Menus           |              | SQLite state   |                 | package.json  |
 +-----------------+              +----------------+                 +---------------+
-                                       |                                  |
-                                       | GitHub API                       |
-                                       v                                  v
-                                 +----------------+              +---------------+
-                                 | git init       |              | Vercel        |
-                                 | create repo    |------------->| Netlify       |
-                                 | push           |              | Cloudflare    |
-                                 +----------------+              +---------------+
-
-Ongoing: WordPress content changes --> sync tools --> Astro rebuild --> live site updated
+        |                              |                                  |
+        | wp-astro-bridge              | GitHub API                       |
+        | (optional plugin)            v                                  v
+        |                        +----------------+              +---------------+
+        | webhook on publish --> | git commit     |              | Vercel        |
+        | preview URL rewrite   | push           |------------->| Netlify       |
+        | REST SEO field        +----------------+              | Cloudflare    |
+        | health endpoint                                       +---------------+
+        +---webhook------------------------------------------->  deploy hook
 ```
 
 ### The Content Layer Pipeline
@@ -268,6 +269,20 @@ sync_schedule     -> Generate automated sync (GitHub Actions, cron, webhooks)
 sync_reset        -> Clear sync tracking to force a full re-check
 ```
 
+### Phase 7: wp-astro-bridge Plugin (Optional Power-Up)
+
+Install the companion WordPress plugin for automatic rebuilds and draft preview.
+
+```
+setup_wizard      -> Auto-detects if wp-astro-bridge is installed
+sync_webhook      -> Process individual post webhooks (targeted single-post sync)
+sync_schedule     -> wordpress-plugin option generates setup instructions
+```
+
+**Webhook auto-rebuild:** Editor publishes -> plugin fires webhook -> Astro rebuilds in 1-2 min.
+**Draft preview:** Editor clicks Preview -> sees draft on real Astro frontend design.
+**Settings:** Astro URL, Webhook URL, Secret. Three fields in wp-admin, that is it.
+
 ---
 
 ## Tool Reference
@@ -319,7 +334,7 @@ sync_reset        -> Clear sync tracking to force a full re-check
 
 | Tool | Description |
 |------|-------------|
-| `scaffold_project` | Create complete Astro project: package.json, astro.config, layouts, content collections, pages, RSS, deploy config. |
+| `scaffold_project` | Create complete Astro 6 project: package.json, astro.config (hybrid mode), layouts, content collections, paginated blog, search (Pagefind), related posts, JSON Feed, RSS, 404 page, reading progress bar, preview route, webhook endpoint, deploy config. |
 | `write_post` | Convert and write a single post as Markdown to the content directory. Supports dry_run. |
 | `write_batch` | Convert and write a page of posts. Use with pagination for incremental writing. |
 | `generate_redirects` | Generate redirect rules from WordPress->Astro URL map. Supports Netlify, Vercel, Cloudflare, Apache, Nginx. |
@@ -350,7 +365,7 @@ sync_reset        -> Clear sync tracking to force a full re-check
 | `export_validate` | Verify output: check files exist, count issues, confirm completeness. |
 | `export_cleanup` | Delete generation job data from database (does not delete files). |
 
-### Content Sync (7 tools)
+### Content Sync (8 tools)
 
 WordPress is your living CMS -- editors publish new posts, update content, change images, and delete old pages daily. The sync tools are the core ongoing workflow that keeps your Astro frontend current without regenerating the entire content layer.
 
@@ -361,8 +376,9 @@ WordPress is your living CMS -- editors publish new posts, update content, chang
 | `sync_delete` | Remove local files for posts deleted/trashed in WordPress. Cleans up URL map entries. |
 | `sync_full` | Complete sync in one command: check -> pull -> delete -> optionally commit to git. |
 | `sync_status` | Show sync history: last sync time, changes made, error counts. |
-| `sync_schedule` | Generate automated sync config: GitHub Actions workflow, cron script, Netlify/Vercel webhooks. |
+| `sync_schedule` | Generate automated sync config: GitHub Actions workflow, cron script, Netlify/Vercel webhooks, or wordpress-plugin setup instructions. |
 | `sync_reset` | Clear sync tracking to force a full re-check on next sync. |
+| `sync_webhook` | Process a webhook from wp-astro-bridge. Validates HMAC signature, syncs only the changed post. |
 
 **How it works:**
 1. Queries WordPress REST API for posts modified after the last sync
@@ -385,7 +401,45 @@ sync_schedule (platform: github-actions, interval: daily)
 
 # Real-time sync via WordPress webhooks
 sync_schedule (platform: vercel)  # or netlify
+
+# Instant webhook sync via wp-astro-bridge plugin
+sync_schedule (platform: wordpress-plugin)
+
+# Process individual post webhook
+sync_webhook (validates HMAC, syncs single post)
 ```
+
+### Setup Wizard (1 tool)
+
+| Tool | Description |
+|------|-------------|
+| `setup_wizard` | One-command guided flow: register site, analyze, configure, preview, scaffold, export, generate redirects, git init. Goes from WordPress site to deployed Astro frontend in 5 minutes. |
+
+### wp-astro-bridge WordPress Plugin
+
+Optional companion plugin that connects WordPress to your Astro frontend. Install for automatic rebuilds and draft preview.
+
+```
+wordpress/wp-astro-bridge/
+├── wp-astro-bridge.php              -- Plugin bootstrap
+├── admin/
+│   └── class-settings.php           -- Settings page (3 fields)
+├── includes/
+│   ├── class-webhook.php            -- Webhook on publish/update/trash
+│   ├── class-preview.php            -- Preview URL rewrite + HMAC tokens
+│   └── class-rest.php               -- Normalized SEO field + health endpoint
+└── readme.txt                       -- WordPress.org format
+```
+
+**Features:**
+- **Webhook dispatcher** -- HMAC-signed POST on content changes, 2-second debounce, non-blocking
+- **Preview URL rewriter** -- WordPress "Preview" button points to Astro `/preview` route, 5-minute token expiry
+- **Normalized SEO REST field** -- `astro_seo` field works with Yoast, RankMath, AIOSEO (same output format)
+- **Health endpoint** -- `GET /wp-json/astro-bridge/v1/health`
+
+**Installation:** Upload the `wordpress/wp-astro-bridge/` folder to your WordPress plugins directory, activate, go to Settings > Astro Bridge.
+
+**Zero dependencies.** No Composer, no custom DB tables, no JavaScript bundles, no cron jobs. WordPress 5.6+.
 
 ---
 
@@ -452,7 +506,7 @@ sync_schedule (platform: vercel)  # or netlify
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WP_ASTRO_MODE` | `router` | `router` (3 tools) or `full` (all 48) |
+| `WP_ASTRO_MODE` | `router` | `router` (3 tools) or `full` (all 57) |
 | `WP_ASTRO_CONFIG` | `config/sites.json` | Config file path |
 | `WP_ASTRO_DB` | `data/wp-astro.db` | SQLite database path |
 | `WP_ASTRO_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
@@ -481,7 +535,7 @@ src/
     output.ts             -- 7 output and media tools
     github.ts             -- 6 GitHub tools
     export.ts             -- 7 content generation pipeline tools
-    sync.ts               -- 7 content sync tools
+    sync.ts               -- 8 content sync tools
   schemas/
     sites.ts              -- Zod schemas for site tools
     extract.ts            -- Zod schemas for extract tools
@@ -511,7 +565,7 @@ data/
 
 ### Key Patterns
 
-- **Router mode**: 3 meta-tools expose 48 actions via `wp_astro_run`, keeping the tool list clean for Claude
+- **Router mode**: 3 meta-tools expose 57 actions via `wp_astro_run`, keeping the tool list clean for Claude
 - **Singleton managers**: SiteManager, DatabaseManager, Logger -- initialized once, shared everywhere
 - **Token bucket rate limiting**: Per-site rate limiters with automatic backoff on 429 responses
 - **HTTP connection pooling**: Keep-alive agents with 10 max sockets per site
@@ -550,7 +604,7 @@ It is designed for sites with 2,000-6,000+ posts. The SQLite-backed generation e
 By default, no. Media stays on your WordPress server. The `rewrite` strategy swaps the domain in URLs for go-live (e.g., when WordPress moves to `app.example.com` and Astro takes over the main domain). A `download` strategy is planned for fully self-contained sites.
 
 **Q: What Astro version does it target?**
-Astro 5.x with content collections using the glob loader pattern.
+Astro 6 with hybrid rendering (static by default, SSR for preview route).
 
 ### WordPress Compatibility
 
@@ -600,10 +654,19 @@ Yes. Register as many WordPress sites as you want. Each site has its own config,
 **Q: What happens at go-live?**
 WordPress moves to a subdomain (e.g., `app.example.com`) where it continues as the headless backend, hidden from public visitors. Astro takes over the main domain (`example.com`) as the fast, public-facing frontend. The `media_rewrite` tool handles the URL swap across all generated content.
 
+**Q: What is wp-astro-bridge?**
+An optional WordPress plugin that ships with the project. It fires webhooks when content changes (auto-rebuilds your Astro site), rewrites the Preview button to show drafts on the Astro frontend, and exposes a normalized SEO REST field. Three PHP classes, zero dependencies.
+
+**Q: Do I need the plugin?**
+No. The tool works without it -- you can sync content manually or via GitHub Actions cron. The plugin adds automatic rebuilds (1-2 min after publish) and draft preview. It is an upgrade path, not a requirement.
+
+**Q: What is `setup_wizard`?**
+A single command that runs the entire setup flow: register site, analyze content, configure export, preview posts, scaffold Astro project, export all content, generate redirects, and git init. Five minutes from WordPress site to deployed Astro frontend.
+
 ### Technical
 
 **Q: What is the difference between `router` and `full` mode?**
-In `router` mode (default), only 3 tools are exposed to Claude: `wp_astro_run`, `wp_astro_help`, `wp_astro_describe`. This saves tokens. In `full` mode, all 55 tools are exposed directly. Set via `WP_ASTRO_MODE` env var.
+In `router` mode (default), only 3 tools are exposed to Claude: `wp_astro_run`, `wp_astro_help`, `wp_astro_describe`. This saves tokens. In `full` mode, all 57 tools are exposed directly. Set via `WP_ASTRO_MODE` env var.
 
 **Q: Does it handle rate limiting?**
 Yes. Each site has a token-bucket rate limiter (default: 10 req/s). If WordPress returns a 429, the rate is automatically halved. Configurable via `rate_limit` in export config.
