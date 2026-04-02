@@ -92,3 +92,12 @@ npm run build
 - Phase 5: GitHub (git init, repo creation, commit, push, deploy config) ✓
 - Phase 6: Build pipeline (batch processing, progress, resume, retry, validate) ✓
 - Phase 7: Content Sync (change detection, pull updates from WP, full sync, scheduling) ✓
+
+## Roadmap (Living Bridge)
+
+See full spec: `docs/superpowers/specs/2026-04-02-living-bridge-roadmap-design.md`
+
+- Phase 8: Setup wizard + production-ready scaffolding (search, pagination, OG images) — IN PROGRESS
+- Phase 9: wp-astro-bridge WordPress plugin (webhook, preview URL, REST SEO, health endpoint)
+- Phase 10: Webhook-triggered auto-rebuild + reactive sync
+- Phase 11: Draft preview via Astro hybrid SSR
