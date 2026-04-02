@@ -78,8 +78,8 @@ export function scaffoldProject(
   // 7. Index page
   writeFile('src/pages/index.astro', useJsonMode ? generateIndexPageJson(site) : generateIndexPage(site));
 
-  // 8. Blog listing page
-  writeFile('src/pages/blog/index.astro', useJsonMode ? generateBlogListPageJson() : generateBlogListPage());
+  // 8. Blog listing page (paginated)
+  writeFile('src/pages/blog/[...page].astro', useJsonMode ? generateBlogListPaginatedJson() : generateBlogListPaginated());
 
   // 9. Blog post page (dynamic route)
   writeFile('src/pages/blog/[...slug].astro', useJsonMode ? generateBlogPostPageJson() : generateBlogPostPage());
@@ -506,20 +506,26 @@ const posts = (await getCollection('blog'))
 `;
 }
 
-function generateBlogListPage(): string {
+function generateBlogListPaginated(): string {
   return `---
-import BaseLayout from '../../layouts/BaseLayout.astro';
+import type { GetStaticPaths } from 'astro';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
 import { getCollection } from 'astro:content';
 
-const posts = (await getCollection('blog'))
-  .filter(post => !post.data.draft)
-  .sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime());
+export const getStaticPaths = (async ({ paginate }) => {
+  const posts = (await getCollection('blog'))
+    .filter(post => !post.data.draft)
+    .sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime());
+  return paginate(posts, { pageSize: 12 });
+}) satisfies GetStaticPaths;
+
+const { page } = Astro.props;
 ---
 
-<BaseLayout title="Blog">
+<BaseLayout title={page.currentPage === 1 ? 'Blog' : \`Blog — Page \${page.currentPage}\`}>
   <h1>Blog</h1>
   <ul>
-    {posts.map(post => (
+    {page.data.map(post => (
       <li>
         <a href={\`/blog/\${post.data.slug}\`}>
           <h2>{post.data.title}</h2>
@@ -533,6 +539,50 @@ const posts = (await getCollection('blog'))
       </li>
     ))}
   </ul>
+  <nav aria-label="Pagination">
+    {page.url.prev && <a href={page.url.prev}>Previous</a>}
+    <span>Page {page.currentPage} of {page.lastPage}</span>
+    {page.url.next && <a href={page.url.next}>Next</a>}
+  </nav>
+</BaseLayout>
+`;
+}
+
+function generateBlogListPaginatedJson(): string {
+  return `---
+import type { GetStaticPaths } from 'astro';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import allPosts from '../../../data/blog.json';
+
+export const getStaticPaths = (({ paginate }) => {
+  return paginate(allPosts, { pageSize: 12 });
+}) satisfies GetStaticPaths;
+
+const { page } = Astro.props;
+---
+
+<BaseLayout title={page.currentPage === 1 ? 'Blog' : \`Blog — Page \${page.currentPage}\`}>
+  <h1>Blog</h1>
+  <ul>
+    {page.data.map(post => (
+      <li>
+        <a href={\`/blog/\${post.slug}\`}>
+          <h2>{post.title}</h2>
+        </a>
+        {post.excerpt && <p>{post.excerpt}</p>}
+        <div class="meta">
+          <time datetime={post.date}>{new Date(post.date).toLocaleDateString()}</time>
+          {post.author && <span>by {post.author.name}</span>}
+          {post.readingTime && <span>{post.readingTime} min read</span>}
+        </div>
+      </li>
+    ))}
+  </ul>
+  <nav aria-label="Pagination">
+    {page.url.prev && <a href={page.url.prev}>Previous</a>}
+    <span>Page {page.currentPage} of {page.lastPage}</span>
+    {page.url.next && <a href={page.url.next}>Next</a>}
+  </nav>
 </BaseLayout>
 `;
 }
@@ -726,33 +776,6 @@ const latest = posts.slice(0, 10);
       ))}
     </ul>
   </section>
-</BaseLayout>
-`;
-}
-
-function generateBlogListPageJson(): string {
-  return `---
-import BaseLayout from '../../layouts/BaseLayout.astro';
-import posts from '../../data/blog.json';
----
-
-<BaseLayout title="Blog">
-  <h1>Blog</h1>
-  <ul>
-    {posts.map(post => (
-      <li>
-        <a href={\`/blog/\${post.slug}\`}>
-          <h2>{post.title}</h2>
-        </a>
-        {post.excerpt && <p>{post.excerpt}</p>}
-        <div class="meta">
-          <time datetime={post.date}>{new Date(post.date).toLocaleDateString()}</time>
-          {post.author && <span>by {post.author.name}</span>}
-          {post.readingTime && <span>{post.readingTime} min read</span>}
-        </div>
-      </li>
-    ))}
-  </ul>
 </BaseLayout>
 `;
 }
