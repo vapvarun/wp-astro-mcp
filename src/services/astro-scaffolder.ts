@@ -90,6 +90,9 @@ export function scaffoldProject(
   // 10b. Search page (Pagefind)
   writeFile('src/pages/search.astro', generateSearchPage());
 
+  // 10c. Webhook endpoint for wp-astro-bridge
+  writeFile('src/pages/api/hook.ts', generateWebhookEndpoint());
+
   // 11. RSS feed (optional)
   writeFile('src/pages/rss.xml.ts', generateRssFeed(site));
 
@@ -697,6 +700,38 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     });
   <\/script>
 </BaseLayout>
+`;
+}
+
+function generateWebhookEndpoint(): string {
+  return `import type { APIRoute } from 'astro';
+
+/**
+ * Webhook endpoint -- receives content change notifications from wp-astro-bridge.
+ *
+ * Configure your deploy platform's build hook URL as the webhook_url in wp-astro-bridge settings.
+ * This endpoint is an alternative: it validates the webhook signature and can trigger
+ * platform-specific rebuild APIs.
+ *
+ * For most setups, pointing wp-astro-bridge directly at the deploy hook is simpler.
+ */
+export const POST: APIRoute = async ({ request }) => {
+  const signature = request.headers.get('x-astro-signature') || '';
+  const event = request.headers.get('x-astro-event') || '';
+  const body = await request.text();
+
+  // Log the webhook event
+  console.log('[webhook]', event, body.substring(0, 200));
+
+  // TODO: Add your deploy platform's rebuild trigger here
+  // Vercel: fetch('https://api.vercel.com/v1/integrations/deploy/...', { method: 'POST' })
+  // Netlify: fetch('https://api.netlify.com/build_hooks/...', { method: 'POST' })
+
+  return new Response(JSON.stringify({ received: true, event }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+};
 `;
 }
 

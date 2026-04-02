@@ -41,7 +41,7 @@ export const syncStatusSchema = z.object({
 
 export const syncScheduleSchema = z.object({
   site_id: z.string().optional(),
-  platform: z.enum(['github-actions', 'cron', 'netlify', 'vercel']).describe('Platform for scheduled sync'),
+  platform: z.enum(['github-actions', 'cron', 'netlify', 'vercel', 'wordpress-plugin']).describe('Platform for scheduled sync'),
   interval: z.enum(['hourly', 'every-6h', 'every-12h', 'daily', 'weekly']).optional().default('daily'),
   output_dir: z.string().optional().describe('Output directory for config file'),
   branch: z.string().optional().default('main').describe('Git branch to sync to'),
@@ -50,4 +50,14 @@ export const syncScheduleSchema = z.object({
 export const syncResetSchema = z.object({
   site_id: z.string().optional(),
   confirm: z.boolean().describe('Must be true to reset sync tracking'),
+});
+
+export const syncWebhookSchema = z.object({
+  site_id: z.string().optional(),
+  action: z.string().describe('Webhook action (post_published, post_updated, post_trashed, post_unpublished)'),
+  post_id: z.number().describe('WordPress post ID'),
+  post_type: z.string().optional().default('post'),
+  slug: z.string().optional(),
+  signature: z.string().optional().describe('HMAC-SHA256 signature for verification'),
+  payload_raw: z.string().optional().describe('Raw JSON payload for signature verification'),
 });

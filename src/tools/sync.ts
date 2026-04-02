@@ -18,9 +18,11 @@ import {
   syncStatusSchema,
   syncScheduleSchema,
   syncResetSchema,
+  syncWebhookSchema,
 } from '../schemas/sync.js';
 import type { SiteConfig } from '../types/index.js';
 import logger from '../utils/logger.js';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
@@ -108,7 +110,7 @@ export const syncTools: Tool[] = [
       type: 'object',
       properties: {
         site_id: { type: 'string', description: 'Site ID (uses default if omitted)' },
-        platform: { type: 'string', enum: ['github-actions', 'cron', 'netlify', 'vercel'], description: 'Platform for scheduled sync' },
+        platform: { type: 'string', enum: ['github-actions', 'cron', 'netlify', 'vercel', 'wordpress-plugin'], description: 'Platform for scheduled sync' },
         interval: { type: 'string', enum: ['hourly', 'every-6h', 'every-12h', 'daily', 'weekly'], description: 'Sync frequency (default: daily)' },
         output_dir: { type: 'string', description: 'Output directory for config file' },
         branch: { type: 'string', description: 'Git branch to sync to (default: main)' },
@@ -127,6 +129,24 @@ export const syncTools: Tool[] = [
         confirm: { type: 'boolean', description: 'Must be true to reset' },
       },
       required: ['confirm'],
+    },
+  },
+  {
+    name: 'sync_webhook',
+    description:
+      'Process a webhook from wp-astro-bridge. Validates signature, syncs the specific post (fetch, convert, write). Much faster than full sync — updates only the changed post.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'Site ID (uses default if omitted)' },
+        action: { type: 'string', description: 'Webhook action (post_published, post_updated, post_trashed, post_unpublished)' },
+        post_id: { type: 'number', description: 'WordPress post ID' },
+        post_type: { type: 'string', description: 'WordPress post type (default: post)' },
+        slug: { type: 'string', description: 'Post slug (optional)' },
+        signature: { type: 'string', description: 'HMAC-SHA256 signature for verification' },
+        payload_raw: { type: 'string', description: 'Raw JSON payload for signature verification' },
+      },
+      required: ['action', 'post_id'],
     },
   },
 ];
@@ -946,6 +966,24 @@ export const syncHandlers: Record<string, (params: unknown) => Promise<unknown>>
           filePath = path.join(outputDir, 'api', 'sync-webhook.ts');
           content = generateVercelWebhook(site, siteId);
           break;
+
+        case 'wordpress-plugin':
+          return formatSuccessResponse({
+            site_id: siteId,
+            platform: 'wordpress-plugin',
+            message: 'Configure wp-astro-bridge plugin in WordPress admin:',
+            settings: {
+              astro_url: site.url,
+              webhook_url: 'Use your deploy platform\'s build hook URL (Vercel/Netlify/Cloudflare)',
+              webhook_secret: 'Auto-generated on plugin activation. Copy to your MCP config if using sync_webhook.',
+            },
+            how_it_works: 'When an editor publishes/updates/deletes a post, the plugin fires a webhook to your configured URL, triggering a site rebuild.',
+            next_steps: [
+              'Install wp-astro-bridge plugin on your WordPress site',
+              'Go to Settings > Astro Bridge in wp-admin',
+              'Enter your Astro frontend URL and deploy hook webhook URL',
+            ],
+          });
       }
 
       if (filePath && content) {
@@ -989,6 +1027,154 @@ export const syncHandlers: Record<string, (params: unknown) => Promise<unknown>>
         site_id: siteId,
         message: 'Sync tracking data cleared. Next sync_pull will re-check all posts.',
         history_records_deleted: historyResult.changes,
+      });
+    } catch (error) {
+      return formatErrorResponse(error);
+    }
+  },
+
+  sync_webhook: async (params: unknown) => {
+    try {
+      const parsed = syncWebhookSchema.parse(params);
+      const siteId = siteManager.resolveSiteId(parsed.site_id);
+      const site = siteManager.getSite(siteId);
+
+      ensureSyncSchema();
+
+      // Verify HMAC-SHA256 signature if provided
+      if (parsed.signature && parsed.payload_raw) {
+        const webhookSecret = (site as unknown as Record<string, unknown>).webhook_secret as string | undefined;
+        if (webhookSecret) {
+          const expected = crypto
+            .createHmac('sha256', webhookSecret)
+            .update(parsed.payload_raw)
+            .digest('hex');
+          if (parsed.signature !== expected) {
+            return formatErrorResponse(new Error('Invalid webhook signature. Request rejected.'));
+          }
+        } else {
+          logger.warn('Webhook signature provided but no webhook_secret configured for site', { siteId });
+        }
+      }
+
+      const db = database.getDatabase();
+
+      // Find the latest completed job for this site
+      const latestJob = db.prepare(
+        "SELECT id FROM export_jobs WHERE site_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1"
+      ).get(siteId) as { id: number } | undefined;
+
+      if (!latestJob) {
+        throw new ValidationError('No completed export job found. Run export_start first before processing webhooks.');
+      }
+
+      const jobId = latestJob.id;
+      const outputDir = getOutputDir(siteId);
+
+      const postType = parsed.post_type || 'post';
+      const ptInfo = site.post_types?.find(pt => pt.slug === postType);
+      const restBase = ptInfo?.rest_base || (postType === 'post' ? 'posts' : postType === 'page' ? 'pages' : postType);
+
+      if (parsed.action === 'post_trashed' || parsed.action === 'post_unpublished') {
+        // Delete the local file
+        const exportPost = db.prepare(
+          "SELECT output_path, post_type FROM export_posts WHERE site_id = ? AND wp_post_id = ? AND status = 'completed'"
+        ).get(siteId, parsed.post_id) as { output_path: string; post_type: string } | undefined;
+
+        if (exportPost?.output_path) {
+          const useJsonMode = site.export?.content_format === 'json';
+          if (useJsonMode) {
+            removePostFromJson(parsed.post_id, exportPost.post_type, site, outputDir);
+          } else {
+            const fullPath = path.join(outputDir, exportPost.output_path);
+            if (fs.existsSync(fullPath)) {
+              fs.unlinkSync(fullPath);
+            }
+          }
+
+          // Remove from tracking tables
+          db.prepare("DELETE FROM export_posts WHERE site_id = ? AND wp_post_id = ?").run(siteId, parsed.post_id);
+          db.prepare("DELETE FROM url_map WHERE site_id = ? AND wp_post_id = ?").run(siteId, parsed.post_id);
+        }
+
+        // Record in sync_history
+        db.prepare(
+          `INSERT INTO sync_history
+           (site_id, completed_at, status, new_posts, updated_posts, deleted_posts, unchanged_posts, errors, details)
+           VALUES (?, datetime('now'), 'completed', 0, 0, 1, 0, 0, ?)`
+        ).run(siteId, JSON.stringify({ webhook: parsed.action, post_id: parsed.post_id }));
+
+        database.audit(siteId, 'sync_webhook', { action: parsed.action, post_id: parsed.post_id, result: 'deleted' });
+
+        return formatSuccessResponse({
+          site_id: siteId,
+          action: parsed.action,
+          post_id: parsed.post_id,
+          result: 'deleted',
+          message: `Post ${parsed.post_id} removed from local files.`,
+        });
+      }
+
+      // post_published or post_updated: fetch, convert, write
+      const post = await wpClient.fetchPost(siteId, parsed.post_id, restBase);
+
+      const useJsonMode = site.export?.content_format === 'json';
+      const writeResult = useJsonMode
+        ? writePostToJson(post, site, outputDir)
+        : writePost(post, site, outputDir);
+
+      // Update or insert export_posts record
+      const existing = db.prepare(
+        "SELECT id FROM export_posts WHERE site_id = ? AND wp_post_id = ? AND status = 'completed'"
+      ).get(siteId, parsed.post_id) as { id: number } | undefined;
+
+      if (existing) {
+        db.prepare(
+          `UPDATE export_posts SET
+            slug = ?, title = ?, output_path = ?,
+            input_size = ?, output_size = ?, conversion_ms = ?,
+            wp_modified_gmt = ?, updated_at = datetime('now')
+           WHERE site_id = ? AND wp_post_id = ? AND status = 'completed'`
+        ).run(
+          writeResult.slug, writeResult.title, writeResult.outputPath,
+          writeResult.inputSize, writeResult.outputSize, writeResult.conversionMs,
+          post.modified_gmt, siteId, parsed.post_id
+        );
+      } else {
+        db.prepare(
+          `INSERT INTO export_posts
+           (job_id, site_id, wp_post_id, post_type, slug, title, status, output_path,
+            input_size, output_size, conversion_ms, wp_modified_gmt, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, datetime('now'))`
+        ).run(
+          jobId, siteId, parsed.post_id, postType, writeResult.slug, writeResult.title,
+          writeResult.outputPath, writeResult.inputSize, writeResult.outputSize,
+          writeResult.conversionMs, post.modified_gmt
+        );
+      }
+
+      // Record in sync_history
+      const isNew = parsed.action === 'post_published' && !existing;
+      db.prepare(
+        `INSERT INTO sync_history
+         (site_id, completed_at, status, new_posts, updated_posts, deleted_posts, unchanged_posts, errors, details)
+         VALUES (?, datetime('now'), 'completed', ?, ?, 0, 0, 0, ?)`
+      ).run(siteId, isNew ? 1 : 0, isNew ? 0 : 1, JSON.stringify({ webhook: parsed.action, post_id: parsed.post_id }));
+
+      database.audit(siteId, 'sync_webhook', {
+        action: parsed.action,
+        post_id: parsed.post_id,
+        result: isNew ? 'created' : 'updated',
+        output_path: writeResult.outputPath,
+      });
+
+      return formatSuccessResponse({
+        site_id: siteId,
+        action: parsed.action,
+        post_id: parsed.post_id,
+        result: isNew ? 'created' : 'updated',
+        output_path: writeResult.outputPath,
+        message: `Post ${parsed.post_id} ${isNew ? 'created' : 'updated'} at ${writeResult.outputPath}`,
       });
     } catch (error) {
       return formatErrorResponse(error);

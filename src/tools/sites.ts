@@ -4,6 +4,7 @@
  */
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import axios from 'axios';
 import { siteManager } from '../config/sites.js';
 import { wpClient } from '../services/wp-rest-client.js';
 import { database } from '../config/database.js';
@@ -187,6 +188,22 @@ export const siteHandlers: Record<string, (params: unknown) => Promise<unknown>>
           auth_roles: detection.user?.roles,
         });
 
+        // Check if wp-astro-bridge is installed
+        let bridgeDetected = false;
+        try {
+          const bridgeUrl = `${site.url.replace(/\/+$/, '')}/wp-json/astro-bridge/v1/health`;
+          const auth = Buffer.from(`${site.username}:${site.app_password}`).toString('base64');
+          const healthResp = await axios.get(bridgeUrl, {
+            headers: { Authorization: `Basic ${auth}` },
+            timeout: 5000,
+          });
+          if (healthResp.data?.status === 'ok') {
+            bridgeDetected = true;
+          }
+        } catch {
+          // Bridge not installed — that's fine
+        }
+
         return formatSuccessResponse({
           message: `Site "${site.name}" added successfully`,
           site: {
@@ -208,10 +225,20 @@ export const siteHandlers: Record<string, (params: unknown) => Promise<unknown>>
             post_types: detection.post_types?.map((t) => `${t.name} (${t.slug})`),
             taxonomies: detection.taxonomies?.map((t) => `${t.name} (${t.slug})`),
           },
+          bridge: bridgeDetected ? {
+            installed: true,
+            message: 'wp-astro-bridge plugin detected. Webhooks and preview available.',
+          } : {
+            installed: false,
+            hint: 'Install wp-astro-bridge plugin for automatic content sync and draft preview.',
+          },
           next_steps: [
             'Run site_analyze for content counts and site readiness',
             'Run site_export_config to set output directory and preferences',
             'Run convert_preview to see sample converted posts',
+            bridgeDetected
+              ? 'wp-astro-bridge detected — configure webhook URL in Settings > Astro Bridge'
+              : 'Optional: Install wp-astro-bridge plugin for webhooks and draft preview',
           ],
         });
       } else {

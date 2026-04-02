@@ -85,6 +85,7 @@ export const TOOL_CATEGORIES: Record<string, string[]> = {
     'sync_status',
     'sync_schedule',
     'sync_reset',
+    'sync_webhook',
   ],
   wizard: [
     'setup_wizard',
