@@ -93,6 +93,9 @@ export function scaffoldProject(
   // 10c. Webhook endpoint for wp-astro-bridge
   writeFile('src/pages/api/hook.ts', generateWebhookEndpoint());
 
+  // 10d. Preview page (SSR -- requires hybrid output mode)
+  writeFile('src/pages/preview.astro', generatePreviewPage(site));
+
   // 11. RSS feed (optional)
   writeFile('src/pages/rss.xml.ts', generateRssFeed(site));
 
@@ -244,7 +247,7 @@ export default defineConfig({
     };
     if (adapterMap[deployPlatform]) {
       config += `\n  adapter: ${adapterMap[deployPlatform]},`;
-      config += `\n  output: 'static',`;
+      config += `\n  output: 'hybrid',`;
     }
   }
 
@@ -732,6 +735,95 @@ export const POST: APIRoute = async ({ request }) => {
     headers: { 'Content-Type': 'application/json' },
   });
 };
+`;
+}
+
+function generatePreviewPage(site: SiteConfig): string {
+  const wpUrl = site.url.replace(/\/+$/, '');
+  return `---
+export const prerender = false;
+
+const url = new URL(Astro.request.url);
+const token = url.searchParams.get('token');
+const postId = url.searchParams.get('id');
+
+if (!token || !postId) {
+  return Astro.redirect('/404');
+}
+
+// Verify token and fetch draft content from WordPress
+let post = null;
+let error = null;
+
+try {
+  const verifyUrl = '${wpUrl}/wp-json/astro-bridge/v1/verify-token?' + new URLSearchParams({ token, post_id: postId }).toString();
+  const response = await fetch(verifyUrl);
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    error = data.message || 'Preview token is invalid or expired. Click Preview again in WordPress.';
+  } else {
+    post = await response.json();
+  }
+} catch (e) {
+  error = 'Could not connect to WordPress. Make sure the site is accessible.';
+}
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title={post ? \`Preview: \${post.title}\` : 'Preview Error'}>
+  {error ? (
+    <div style="max-width: 600px; margin: 4rem auto; text-align: center;">
+      <h1 style="color: #dc2626;">Preview Unavailable</h1>
+      <p style="color: #666; font-size: 1.1rem;">{error}</p>
+      <p style="margin-top: 2rem;"><a href="/">Go to homepage</a></p>
+    </div>
+  ) : post ? (
+    <>
+      <div style="background: #fef3c7; border-bottom: 1px solid #f59e0b; padding: 0.75rem 1rem; text-align: center; font-size: 0.875rem; color: #92400e; position: sticky; top: 0; z-index: 40;">
+        You are previewing a draft. This page is not published.
+      </div>
+      <article style="max-width: 800px; margin: 0 auto; padding: 2rem 1rem;">
+        <header>
+          <h1>{post.title}</h1>
+          <div class="meta" style="color: #666; margin: 0.5rem 0 2rem;">
+            {post.date && <time datetime={post.date}>{new Date(post.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</time>}
+            {post.author && <span> by {post.author.name}</span>}
+          </div>
+          {post.categories && post.categories.length > 0 && (
+            <div style="margin-bottom: 1rem;">
+              {post.categories.map((cat) => (
+                <span style="background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 0.25rem; margin-right: 0.5rem; font-size: 0.875rem;">{cat.name}</span>
+              ))}
+            </div>
+          )}
+        </header>
+
+        {post.featured_image && (
+          <img
+            src={post.featured_image.url}
+            alt={post.featured_image.alt || post.title}
+            width={post.featured_image.width}
+            height={post.featured_image.height}
+            loading="eager"
+            style={post.featured_image.width && post.featured_image.height ? \`aspect-ratio: \${post.featured_image.width}/\${post.featured_image.height}; max-width: 100%; height: auto;\` : 'max-width: 100%;'}
+          />
+        )}
+
+        <div class="content" set:html={post.content} />
+
+        {post.tags && post.tags.length > 0 && (
+          <footer style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
+            {post.tags.map((tag) => (
+              <span style="background: #e5e7eb; padding: 0.25rem 0.5rem; border-radius: 0.25rem; margin-right: 0.5rem; font-size: 0.875rem;">{tag.name}</span>
+            ))}
+          </footer>
+        )}
+      </article>
+    </>
+  ) : null}
+</BaseLayout>
 `;
 }
 
