@@ -1,5 +1,5 @@
 /**
- * SQLite database for migration state tracking
+ * SQLite database for export state tracking
  */
 
 import Database from 'better-sqlite3';
@@ -51,7 +51,7 @@ class DatabaseManager {
   private initializeSchema(): void {
     const db = this.db!;
 
-    // Export jobs — tracks each migration run
+    // Export jobs — tracks each export run
     db.exec(`
       CREATE TABLE IF NOT EXISTS export_jobs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

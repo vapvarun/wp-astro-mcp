@@ -413,7 +413,7 @@ export interface PaginationInfo {
   perPage: number;
 }
 
-export interface MigrationReport {
+export interface ExportReport {
   site_id: string;
   site_url: string;
   export_date: string;
@@ -422,7 +422,7 @@ export interface MigrationReport {
   total_media: number;
   content_types_exported: string[];
   issues_by_severity: Record<string, number>;
-  unmigrated_features: string[];
+  unsupported_features: string[];
   redirects_generated: number;
   files_generated: number;
   total_size_bytes: number;

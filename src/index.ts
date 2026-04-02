@@ -2,7 +2,7 @@
 /**
  * WP Astro MCP Server - Entry Point
  *
- * Migrates WordPress sites to Astro with multi-site support,
+ * Adds an Astro frontend layer to WordPress sites with multi-site support,
  * batch content conversion, and GitHub publishing.
  */
 

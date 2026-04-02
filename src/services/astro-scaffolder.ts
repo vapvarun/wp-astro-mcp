@@ -176,7 +176,7 @@ function generatePackageJson(site: SiteConfig, componentLib: string, deployPlatf
     name: site.id,
     type: 'module',
     version: '1.0.0',
-    description: `${site.name} — Migrated from WordPress to Astro`,
+    description: `${site.name} — Powered by WordPress + Astro`,
     engines: { node: '>=22.12.0' },
     scripts: {
       dev: 'astro dev',

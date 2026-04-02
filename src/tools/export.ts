@@ -19,6 +19,7 @@ import {
   exportValidateSchema,
   exportCleanupSchema,
 } from '../schemas/export.js';
+import path from 'path';
 import logger from '../utils/logger.js';
 
 function resolveOutputDir(siteId: string, paramDir?: string): string {
@@ -34,7 +35,7 @@ export const exportTools: Tool[] = [
   {
     name: 'export_plan',
     description:
-      'Generate a full migration plan: content counts by type, estimated time, recommended batch size, and pre-flight checks.',
+      'Generate a full export plan: content counts by type, estimated time, recommended batch size, and pre-flight checks.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -463,7 +464,7 @@ export const exportHandlers: Record<string, (params: unknown) => Promise<unknown
       for (const post of completedPosts) {
         // Check file exists
         if (post.output_path) {
-          const fullPath = require('path').join(outputDir, post.output_path);
+          const fullPath = path.join(outputDir, post.output_path);
           if (!fs.existsSync(fullPath)) {
             missingFiles++;
           }
@@ -622,6 +623,9 @@ async function processNextBatch(
         result.conversionMs,
         contentHash,
         post.modified_gmt || null,
+        // TODO: WriteResult only exposes issueCount, not the actual issues array.
+        // This stores '[]' as a placeholder when issues exist. To fix, extend WriteResult
+        // to include the issues array from the transform pipeline.
         result.issueCount > 0 ? '[]' : null,
         row.id
       );

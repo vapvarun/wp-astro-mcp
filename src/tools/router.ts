@@ -94,7 +94,7 @@ export const TOOL_CATEGORIES: Record<string, string[]> = {
 export const routerTools: Tool[] = [
   {
     name: 'wp_astro_run',
-    description: `Execute a WordPress-to-Astro migration action. Use wp_astro_help to list available actions.
+    description: `Execute a WordPress-to-Astro frontend action. Use wp_astro_help to list available actions.
 
 Common workflows:
 1. Add site: site_add → site_analyze → site_export_config
@@ -132,7 +132,7 @@ Quick actions:
       properties: {
         category: {
           type: 'string',
-          description: 'Filter by category (site, analyze, extract, transform, media, output, scaffold, github, export)',
+          description: 'Filter by category (site, extract, transform, output, media, github, export, sync)',
         },
       },
     },

@@ -1,6 +1,6 @@
 # WP Astro MCP Server
 
-WordPress-to-Astro migration MCP server with multi-site support.
+Headless WordPress MCP server — adds an Astro frontend to any WordPress site, with multi-site support.
 
 ## Astro Target Version: 6.0
 
@@ -86,9 +86,9 @@ npm run build
 ## Implementation Phases
 
 - Phase 1: Foundation (types, config, sites, router) ✓
-- Phase 2: Extract (content extraction, content analyzer, caching) ✓
+- Phase 2: Extract (content extraction from WP REST API, content analyzer, caching) ✓
 - Phase 3: Transform (HTML→MD pipeline, Turndown, shortcodes) ✓
-- Phase 4: Output (Astro scaffolding, content writing, redirects, media) ✓
+- Phase 4: Output (Astro frontend scaffolding, content writing, redirects, media) ✓
 - Phase 5: GitHub (git init, repo creation, commit, push, deploy config) ✓
-- Phase 6: Export pipeline (batch processing, progress, resume, retry, validate) ✓
-- Phase 7: Content Sync (change detection, pull, delete, full sync, scheduling) ✓
+- Phase 6: Build pipeline (batch processing, progress, resume, retry, validate) ✓
+- Phase 7: Content Sync (change detection, pull updates from WP, full sync, scheduling) ✓

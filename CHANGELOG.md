@@ -2,6 +2,15 @@
 
 All notable changes to WP Astro MCP are documented here.
 
+## [2.1.0] - 2026-04-02
+
+### Changed
+- **Reframed messaging**: No longer positioned as a "migration" tool. WP Astro MCP adds an Astro frontend layer to WordPress sites -- WordPress stays as the headless CMS backend, hidden from public. All descriptions, README, tool descriptions, and CLAUDE.md updated.
+- Fixed `wp_astro_help` category list (was listing nonexistent categories like `analyze`, `scaffold`)
+- Fixed `export_preview` → `convert_preview` in site_add next_steps
+- Fixed `require('path')` in export.ts → proper ESM `import path`
+- Added TODO for export issues serialization limitation
+
 ## [2.0.0] - 2026-04-02
 
 ### Breaking Changes

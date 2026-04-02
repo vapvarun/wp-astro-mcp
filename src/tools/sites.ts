@@ -103,7 +103,7 @@ export const siteTools: Tool[] = [
   {
     name: 'site_analyze',
     description:
-      'Deep analysis of a WordPress site: count all content types, detect plugins, audit shortcodes, check media, and generate migration readiness report.',
+      'Deep analysis of a WordPress site: count all content types, detect plugins, audit shortcodes, check media, and generate readiness report.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -209,9 +209,9 @@ export const siteHandlers: Record<string, (params: unknown) => Promise<unknown>>
             taxonomies: detection.taxonomies?.map((t) => `${t.name} (${t.slug})`),
           },
           next_steps: [
-            'Run site_analyze for content counts and migration readiness',
+            'Run site_analyze for content counts and site readiness',
             'Run site_export_config to set output directory and preferences',
-            'Run export_preview to see sample converted posts',
+            'Run convert_preview to see sample converted posts',
           ],
         });
       } else {
@@ -418,7 +418,7 @@ export const siteHandlers: Record<string, (params: unknown) => Promise<unknown>>
       siteManager.updateSite(siteId, { content_stats: stats });
       database.audit(siteId, 'site_analyze', stats);
 
-      // Estimate migration time
+      // Estimate build time
       const totalContent =
         Object.values(postTypeCounts).reduce((a, b) => a + b, 0);
       const estimatedMinutes = Math.ceil(totalContent / 180); // ~3 posts/sec
@@ -455,8 +455,8 @@ export const siteHandlers: Record<string, (params: unknown) => Promise<unknown>>
         },
         next_steps: [
           'Run site_export_config to set output directory and preferences',
-          'Run export_preview to see sample converted posts before full export',
-          'Run export_plan for full migration readiness report',
+          'Run convert_preview to see sample converted posts before full export',
+          'Run export_plan for full readiness report',
         ],
       });
     } catch (error) {

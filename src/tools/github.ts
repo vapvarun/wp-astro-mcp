@@ -162,7 +162,7 @@ export const githubHandlers: Record<string, (params: unknown) => Promise<unknown
       const repoName = parsed.repo_name || site.export?.github_repo || site.id;
       const org = parsed.org || site.export?.github_org;
       const isPrivate = parsed.private !== false;
-      const description = parsed.description || `${site.name} — Migrated from WordPress to Astro`;
+      const description = parsed.description || `${site.name} — Astro frontend powered by WordPress`;
 
       let repoUrl: string;
       let fullName: string;

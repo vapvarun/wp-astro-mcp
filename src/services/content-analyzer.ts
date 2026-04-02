@@ -114,7 +114,7 @@ function countElements(elements: unknown[]): number {
 }
 
 /**
- * Analyze a single post's content for migration complexity
+ * Analyze a single post's content complexity
  */
 export function analyzeContent(post: WPPost): ContentAnalysis {
   const content = post.content?.rendered || post.content?.raw || '';

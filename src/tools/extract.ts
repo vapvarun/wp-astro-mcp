@@ -179,7 +179,7 @@ export const extractTools: Tool[] = [
   {
     name: 'content_audit',
     description:
-      'Sample posts and analyze content patterns: detect shortcodes, Gutenberg blocks, page builders, embeds, galleries, tables, forms, complexity distribution. Essential for planning migration.',
+      'Sample posts and analyze content patterns: detect shortcodes, Gutenberg blocks, page builders, embeds, galleries, tables, forms, complexity distribution. Essential for planning the Astro frontend build.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -662,7 +662,7 @@ export const extractHandlers: Record<string, (params: unknown) => Promise<unknow
         blocks: summary.allBlocks.length,
       });
 
-      // Build migration recommendations
+      // Build recommendations
       const recommendations: string[] = [];
       if (Object.keys(summary.pageBuilders).length > 0) {
         recommendations.push(
