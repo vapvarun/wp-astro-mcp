@@ -437,6 +437,15 @@ const jsonLd = {
   modifiedTime={modified}
   jsonLd={jsonLd}
 >
+  <div id="progress-bar" style="position: fixed; top: 0; left: 0; height: 3px; background: #3b82f6; width: 0%; z-index: 50; transition: width 0.1s;"></div>
+  <script is:inline>
+    window.addEventListener('scroll', () => {
+      const el = document.getElementById('progress-bar');
+      if (!el) return;
+      const h = document.documentElement.scrollHeight - window.innerHeight;
+      el.style.width = h > 0 ? (window.scrollY / h * 100) + '%' : '0%';
+    });
+  <\/script>
   <article>
     <header>
       <h1>{title}</h1>
@@ -848,6 +857,15 @@ const jsonLd = {
   modifiedTime={post.modified}
   jsonLd={jsonLd}
 >
+  <div id="progress-bar" style="position: fixed; top: 0; left: 0; height: 3px; background: #3b82f6; width: 0%; z-index: 50; transition: width 0.1s;"></div>
+  <script is:inline>
+    window.addEventListener('scroll', () => {
+      const el = document.getElementById('progress-bar');
+      if (!el) return;
+      const h = document.documentElement.scrollHeight - window.innerHeight;
+      el.style.width = h > 0 ? (window.scrollY / h * 100) + '%' : '0%';
+    });
+  <\/script>
   <article>
     <header>
       <h1>{post.title}</h1>
