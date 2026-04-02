@@ -659,8 +659,15 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 ---
 
 <BaseLayout title="Page Not Found">
-  <h1>404</h1>
-  <p>Page not found. <a href="/">Go home</a>.</p>
+  <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; text-align: center; padding: 2rem;">
+    <h1 style="font-size: 6rem; font-weight: 800; margin: 0; line-height: 1; color: #1e293b;">404</h1>
+    <p style="font-size: 1.25rem; color: #64748b; margin: 1rem 0 2rem;">This page doesn't exist. It may have been moved or deleted.</p>
+    <nav style="display: flex; gap: 1.5rem; flex-wrap: wrap; justify-content: center;">
+      <a href="/" style="color: #3b82f6; text-decoration: underline;">Home</a>
+      <a href="/blog" style="color: #3b82f6; text-decoration: underline;">Blog</a>
+      <a href="/search" style="color: #3b82f6; text-decoration: underline;">Search</a>
+    </nav>
+  </div>
 </BaseLayout>
 `;
 }
