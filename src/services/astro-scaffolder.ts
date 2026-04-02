@@ -87,6 +87,9 @@ export function scaffoldProject(
   // 10. 404 page
   writeFile('src/pages/404.astro', generate404Page());
 
+  // 10b. Search page (Pagefind)
+  writeFile('src/pages/search.astro', generateSearchPage());
+
   // 11. RSS feed (optional)
   writeFile('src/pages/rss.xml.ts', generateRssFeed(site));
 
@@ -181,6 +184,7 @@ function generatePackageJson(site: SiteConfig, componentLib: string, deployPlatf
     scripts: {
       dev: 'astro dev',
       build: 'astro build',
+      postbuild: 'npx pagefind --site dist',
       preview: 'astro preview',
       'astro': 'astro',
     },
@@ -379,6 +383,7 @@ const fullTitle = title === siteTitle ? title : \`\${title} | \${siteTitle}\`;
     <nav>
       <a href="/">${title}</a>
       <a href="/blog">Blog</a>
+      <a href="/search">Search</a>
     </nav>
   </header>
   <main>
@@ -618,6 +623,25 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 <BaseLayout title="Page Not Found">
   <h1>404</h1>
   <p>Page not found. <a href="/">Go home</a>.</p>
+</BaseLayout>
+`;
+}
+
+function generateSearchPage(): string {
+  return `---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="Search">
+  <h1>Search</h1>
+  <link rel="stylesheet" href="/pagefind/pagefind-ui.css" />
+  <div id="search"></div>
+  <script is:inline src="/pagefind/pagefind-ui.js"><\/script>
+  <script is:inline>
+    document.addEventListener('DOMContentLoaded', () => {
+      new PagefindUI({ element: '#search', showSubResults: true });
+    });
+  <\/script>
 </BaseLayout>
 `;
 }
