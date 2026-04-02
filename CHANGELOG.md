@@ -2,6 +2,17 @@
 
 All notable changes to WP Astro MCP are documented here.
 
+## [2.2.0] - 2026-04-02
+
+### Added
+- **Setup wizard** (`setup_wizard`) — one-command guided flow to go from WordPress site to deployed Astro frontend
+- **Paginated blog index** — static pagination with `/blog/page/2/` URLs
+- **Search page** — Pagefind integration with client-side search at `/search`
+- **Related posts** — computed at build time using shared categories/tags
+- **JSON Feed** — `/feed.json` alongside existing RSS and sitemap
+- **Enhanced 404 page** — styled with links to home, blog, and search
+- **Reading progress bar** — scroll progress indicator on post pages
+
 ## [2.1.0] - 2026-04-02
 
 ### Changed
