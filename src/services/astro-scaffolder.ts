@@ -105,7 +105,6 @@ export function scaffoldProject(
   // 13b. .nvmrc (Astro 6 requires Node 22.12+)
   writeFile('.nvmrc', '22');
 
-
   // 14. Content directories (or data directory for JSON mode)
   if (useJsonMode) {
     fs.mkdirSync(path.join(outputDir, 'src', 'data'), { recursive: true });
@@ -170,7 +169,7 @@ function generatePackageJson(site: SiteConfig, componentLib: string, deployPlatf
   if (componentLib === 'starwind') {
     deps['@starwindui/core'] = '^0.2.0';
     deps['tailwindcss'] = '^4.0.0';
-    deps['@astrojs/tailwind'] = '^6.0.0';
+    deps['@tailwindcss/vite'] = '^4.0.0';
   }
 
   const pkg = {
@@ -194,7 +193,7 @@ function generatePackageJson(site: SiteConfig, componentLib: string, deployPlatf
 function generateAstroConfig(site: SiteConfig, deployPlatform: string): string {
   const integrations: string[] = ['sitemap()'];
   const imports: string[] = [
-    "import { defineConfig, fontProviders } from 'astro/config';",
+    "import { defineConfig } from 'astro/config';",
     "import sitemap from '@astrojs/sitemap';",
   ];
 
@@ -217,13 +216,15 @@ export default defineConfig({
     layout: 'constrained',
     responsiveStyles: true,
   },
-  fonts: [
-    {
-      name: 'Inter',
-      cssVariable: '--font-sans',
-      provider: fontProviders.fontsource(),
-    },
-  ],`;
+  experimental: {
+    fonts: [
+      {
+        provider: 'google',
+        family: 'Inter',
+        weights: [400, 500, 600, 700],
+      },
+    ],
+  },`;
 
   if (deployPlatform !== 'none') {
     const adapterMap: Record<string, string> = {
@@ -345,14 +346,14 @@ const fullTitle = title === siteTitle ? title : \`\${title} | \${siteTitle}\`;
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="canonical" href={canonicalURL} />
+  <link rel="canonical" href={canonicalURL.href} />
   <meta name="description" content={description} />
 
   <!-- Open Graph -->
   <meta property="og:type" content={type} />
   <meta property="og:title" content={fullTitle} />
   <meta property="og:description" content={description} />
-  <meta property="og:url" content={canonicalURL} />
+  <meta property="og:url" content={canonicalURL.href} />
   <meta property="og:site_name" content={siteTitle} />
   {ogImage && <meta property="og:image" content={ogImage} />}
   {publishedTime && <meta property="article:published_time" content={publishedTime} />}
@@ -408,6 +409,7 @@ const jsonLd = {
   '@type': 'BlogPosting',
   headline: title,
   description: pageDescription,
+  mainEntityOfPage: { '@type': 'WebPage', '@id': canonicalURL.href },
   ...(date && { datePublished: date }),
   ...(modified && { dateModified: modified }),
   ...(author && { author: { '@type': 'Person', name: author.name } }),
@@ -611,6 +613,7 @@ interface Props {
   post: {
     title: string;
     date: string;
+    modified?: string;
     author?: { name: string };
     categories?: Array<{ name: string; slug: string }>;
     tags?: Array<{ name: string; slug: string }>;
@@ -619,20 +622,46 @@ interface Props {
     content: string;
     seo?: { title?: string; description?: string; ogImage?: string };
     readingTime?: number;
+    wordCount?: number;
   };
 }
 
 const { post } = Astro.props;
 const pageTitle = post.seo?.title || post.title;
 const pageDescription = post.seo?.description || post.excerpt || '';
+const ogImage = post.seo?.ogImage || post.featuredImage?.url;
+const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+
+// JSON-LD BlogPosting schema
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: post.title,
+  description: pageDescription,
+  mainEntityOfPage: { '@type': 'WebPage', '@id': canonicalURL.href },
+  ...(post.date && { datePublished: post.date }),
+  ...(post.modified && { dateModified: post.modified }),
+  ...(post.author && { author: { '@type': 'Person', name: post.author.name } }),
+  ...(post.featuredImage && { image: post.featuredImage.url }),
+  ...(post.wordCount && { wordCount: post.wordCount }),
+  url: canonicalURL.href,
+};
 ---
 
-<BaseLayout title={pageTitle} description={pageDescription} ogImage={post.seo?.ogImage || post.featuredImage?.url}>
+<BaseLayout
+  title={pageTitle}
+  description={pageDescription}
+  ogImage={ogImage}
+  type="article"
+  publishedTime={post.date}
+  modifiedTime={post.modified}
+  jsonLd={jsonLd}
+>
   <article>
     <header>
       <h1>{post.title}</h1>
       <div class="meta">
-        {post.date && <time datetime={post.date}>{new Date(post.date).toLocaleDateString()}</time>}
+        {post.date && <time datetime={post.date}>{new Date(post.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</time>}
         {post.author && <span>by {post.author.name}</span>}
         {post.readingTime && <span>{post.readingTime} min read</span>}
       </div>
@@ -652,6 +681,7 @@ const pageDescription = post.seo?.description || post.excerpt || '';
         width={post.featuredImage.width}
         height={post.featuredImage.height}
         loading="eager"
+        style={post.featuredImage.width && post.featuredImage.height ? \`aspect-ratio: \${post.featuredImage.width}/\${post.featuredImage.height}\` : undefined}
       />
     )}
 
