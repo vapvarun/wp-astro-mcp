@@ -474,6 +474,8 @@ const jsonLd = {
         </div>
       </footer>
     )}
+
+    <slot name="related" />
   </article>
 </BaseLayout>
 `;
@@ -598,19 +600,51 @@ import { getCollection, render } from 'astro:content';
 import PostLayout from '../../layouts/PostLayout.astro';
 
 export async function getStaticPaths() {
-  const posts = await getCollection('blog');
-  return posts.map(post => ({
-    params: { slug: post.data.slug },
-    props: { post },
-  }));
+  const allPosts = (await getCollection('blog'))
+    .filter(post => !post.data.draft)
+    .sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime());
+
+  return allPosts.map(post => {
+    const postCats = (post.data.categories || []).map(c => c.slug);
+    const postTags = (post.data.tags || []).map(t => t.slug);
+
+    const scored = allPosts
+      .filter(p => p.data.slug !== post.data.slug)
+      .map(p => {
+        const pCats = (p.data.categories || []).map(c => c.slug);
+        const pTags = (p.data.tags || []).map(t => t.slug);
+        const catScore = pCats.filter(c => postCats.includes(c)).length * 2;
+        const tagScore = pTags.filter(t => postTags.includes(t)).length;
+        return { post: p, score: catScore + tagScore };
+      })
+      .filter(r => r.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+      .map(r => r.post);
+
+    return {
+      params: { slug: post.data.slug },
+      props: { post, related: scored },
+    };
+  });
 }
 
-const { post } = Astro.props;
+const { post, related } = Astro.props;
 const { Content } = await render(post);
 ---
 
 <PostLayout frontmatter={post.data}>
   <Content />
+  {related.length > 0 && (
+    <aside slot="related">
+      <h2>Related Posts</h2>
+      <ul>
+        {related.map(r => (
+          <li><a href={\`/blog/\${r.data.slug}\`}>{r.data.title}</a></li>
+        ))}
+      </ul>
+    </aside>
+  )}
 </PostLayout>
 `;
 }
@@ -807,18 +841,47 @@ const latest = posts.slice(0, 10);
 function generateBlogPostPageJson(): string {
   return `---
 import PostLayout from '../../layouts/PostLayout.astro';
-import posts from '../../data/blog.json';
+import allPosts from '../../data/blog.json';
 
 export function getStaticPaths() {
-  return posts.map(post => ({
-    params: { slug: post.slug },
-    props: { post },
-  }));
+  return allPosts.map(post => {
+    const postCats = (post.categories || []).map(c => c.slug);
+    const postTags = (post.tags || []).map(c => c.slug);
+
+    const related = allPosts
+      .filter(p => p.slug !== post.slug)
+      .map(p => {
+        const pCats = (p.categories || []).map(c => c.slug);
+        const pTags = (p.tags || []).map(c => c.slug);
+        const catScore = pCats.filter(c => postCats.includes(c)).length * 2;
+        const tagScore = pTags.filter(t => postTags.includes(t)).length;
+        return { post: p, score: catScore + tagScore };
+      })
+      .filter(r => r.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+      .map(r => r.post);
+
+    return {
+      params: { slug: post.slug },
+      props: { post, related },
+    };
+  });
 }
 
-const { post } = Astro.props;
+const { post, related } = Astro.props;
 ---
 
 <PostLayout post={post} />
+{related.length > 0 && (
+  <aside>
+    <h2>Related Posts</h2>
+    <ul>
+      {related.map(r => (
+        <li><a href={\`/blog/\${r.slug}\`}>{r.title}</a></li>
+      ))}
+    </ul>
+  </aside>
+)}
 `;
 }
