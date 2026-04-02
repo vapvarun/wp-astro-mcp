@@ -96,11 +96,15 @@ export function scaffoldProject(
   } else if (deployPlatform === 'netlify') {
     writeFile('netlify.toml', `[build]\n  command = "npm run build"\n  publish = "dist"\n`);
   } else if (deployPlatform === 'cloudflare') {
-    writeFile('wrangler.toml', `name = "${site.id}"\ncompatibility_date = "2024-01-01"\npages_build_output_dir = "dist"\n`);
+    writeFile('wrangler.toml', `name = "${site.id}"\ncompatibility_date = "2026-03-01"\npages_build_output_dir = "dist"\n`);
   }
 
   // 13. .gitignore
   writeFile('.gitignore', `node_modules/\ndist/\n.astro/\n.env\n*.log\n`);
+
+  // 13b. .nvmrc (Astro 6 requires Node 22.12+)
+  writeFile('.nvmrc', '22');
+
 
   // 14. Content directories (or data directory for JSON mode)
   if (useJsonMode) {
@@ -124,7 +128,7 @@ export function scaffoldProject(
   fs.mkdirSync(path.join(outputDir, 'public'), { recursive: true });
 
   // 16. env.d.ts
-  writeFile('src/env.d.ts', '/// <reference path="../.astro/types.d.ts" />\n');
+  writeFile('src/env.d.ts', '/// <reference types="astro/client" />\n');
 
   logger.info('Project scaffolded', { outputDir, created: created.length, skipped: skipped.length });
 
@@ -154,17 +158,17 @@ export function getCollectionDirForType(
 
 function generatePackageJson(site: SiteConfig, componentLib: string, deployPlatform: string): string {
   const deps: Record<string, string> = {
-    astro: '^5.0.0',
-    '@astrojs/sitemap': '^3.2.0',
-    '@astrojs/rss': '^4.0.0',
+    astro: '^6.0.0',
+    '@astrojs/sitemap': '^4.0.0',
+    '@astrojs/rss': '^5.0.0',
   };
 
-  if (deployPlatform === 'vercel') deps['@astrojs/vercel'] = '^8.0.0';
-  if (deployPlatform === 'netlify') deps['@astrojs/netlify'] = '^6.0.0';
-  if (deployPlatform === 'cloudflare') deps['@astrojs/cloudflare'] = '^12.0.0';
+  if (deployPlatform === 'vercel') deps['@astrojs/vercel'] = '^9.0.0';
+  if (deployPlatform === 'netlify') deps['@astrojs/netlify'] = '^7.0.0';
+  if (deployPlatform === 'cloudflare') deps['@astrojs/cloudflare'] = '^13.0.0';
 
   if (componentLib === 'starwind') {
-    deps['@starwindui/core'] = '^0.1.0';
+    deps['@starwindui/core'] = '^0.2.0';
     deps['tailwindcss'] = '^4.0.0';
     deps['@astrojs/tailwind'] = '^6.0.0';
   }
@@ -174,6 +178,7 @@ function generatePackageJson(site: SiteConfig, componentLib: string, deployPlatf
     type: 'module',
     version: '1.0.0',
     description: `${site.name} — Migrated from WordPress to Astro`,
+    engines: { node: '>=22.12.0' },
     scripts: {
       dev: 'astro dev',
       build: 'astro build',
@@ -189,7 +194,7 @@ function generatePackageJson(site: SiteConfig, componentLib: string, deployPlatf
 function generateAstroConfig(site: SiteConfig, deployPlatform: string): string {
   const integrations: string[] = ['sitemap()'];
   const imports: string[] = [
-    "import { defineConfig } from 'astro/config';",
+    "import { defineConfig, fontProviders } from 'astro/config';",
     "import sitemap from '@astrojs/sitemap';",
   ];
 
@@ -207,7 +212,18 @@ function generateAstroConfig(site: SiteConfig, deployPlatform: string): string {
 
 export default defineConfig({
   site: '${siteUrl}',
-  integrations: [${integrations.join(', ')}],`;
+  integrations: [${integrations.join(', ')}],
+  image: {
+    layout: 'constrained',
+    responsiveStyles: true,
+  },
+  fonts: [
+    {
+      name: 'Inter',
+      cssVariable: '--font-sans',
+      provider: fontProviders.fontsource(),
+    },
+  ],`;
 
   if (deployPlatform !== 'none') {
     const adapterMap: Record<string, string> = {
@@ -242,8 +258,9 @@ function generateContentConfig(site: SiteConfig): string {
   })`);
   }
 
-  return `import { defineCollection, z } from 'astro:content';
+  return `import { defineCollection } from 'astro:content';
 import { glob } from 'astro/loaders';
+import { z } from 'astro/zod';
 
 const baseSchema = z.object({
   title: z.string(),
@@ -280,6 +297,7 @@ const baseSchema = z.object({
     ogImage: z.string().optional(),
     noindex: z.boolean().optional(),
     focusKeyword: z.string().optional(),
+    jsonLd: z.record(z.unknown()).optional(),
   }).optional(),
   readingTime: z.number().optional(),
   wordCount: z.number().optional(),
@@ -302,10 +320,24 @@ interface Props {
   title?: string;
   description?: string;
   ogImage?: string;
+  type?: 'website' | 'article';
+  publishedTime?: string;
+  modifiedTime?: string;
+  jsonLd?: Record<string, unknown>;
 }
 
-const { title = '${title}', description = '${tagline}', ogImage } = Astro.props;
+const {
+  title = '${title}',
+  description = '${tagline}',
+  ogImage,
+  type = 'website',
+  publishedTime,
+  modifiedTime,
+  jsonLd,
+} = Astro.props;
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+const siteTitle = '${title}';
+const fullTitle = title === siteTitle ? title : \`\${title} | \${siteTitle}\`;
 ---
 
 <!DOCTYPE html>
@@ -315,12 +347,31 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="canonical" href={canonicalURL} />
   <meta name="description" content={description} />
-  <meta property="og:title" content={title} />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content={type} />
+  <meta property="og:title" content={fullTitle} />
   <meta property="og:description" content={description} />
+  <meta property="og:url" content={canonicalURL} />
+  <meta property="og:site_name" content={siteTitle} />
   {ogImage && <meta property="og:image" content={ogImage} />}
+  {publishedTime && <meta property="article:published_time" content={publishedTime} />}
+  {modifiedTime && <meta property="article:modified_time" content={modifiedTime} />}
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content={ogImage ? 'summary_large_image' : 'summary'} />
+  <meta name="twitter:title" content={fullTitle} />
+  <meta name="twitter:description" content={description} />
+  {ogImage && <meta name="twitter:image" content={ogImage} />}
+
   <link rel="sitemap" href="/sitemap-index.xml" />
-  <link rel="alternate" type="application/rss+xml" title={title} href="/rss.xml" />
-  <title>{title}</title>
+  <link rel="alternate" type="application/rss+xml" title={siteTitle} href="/rss.xml" />
+
+  {jsonLd && (
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+  )}
+
+  <title>{fullTitle}</title>
 </head>
 <body>
   <header>
@@ -345,17 +396,41 @@ function generatePostLayout(): string {
 import BaseLayout from './BaseLayout.astro';
 
 const { frontmatter } = Astro.props;
-const { title, date, author, categories, tags, featuredImage, excerpt, seo, readingTime } = frontmatter;
+const { title, date, modified, author, categories, tags, featuredImage, excerpt, seo, readingTime, wordCount } = frontmatter;
 const pageTitle = seo?.title || title;
 const pageDescription = seo?.description || excerpt || '';
+const ogImage = seo?.ogImage || featuredImage?.url;
+const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+
+// JSON-LD BlogPosting schema
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: title,
+  description: pageDescription,
+  ...(date && { datePublished: date }),
+  ...(modified && { dateModified: modified }),
+  ...(author && { author: { '@type': 'Person', name: author.name } }),
+  ...(featuredImage && { image: featuredImage.url }),
+  ...(wordCount && { wordCount }),
+  url: canonicalURL.href,
+};
 ---
 
-<BaseLayout title={pageTitle} description={pageDescription} ogImage={seo?.ogImage || featuredImage?.url}>
+<BaseLayout
+  title={pageTitle}
+  description={pageDescription}
+  ogImage={ogImage}
+  type="article"
+  publishedTime={date}
+  modifiedTime={modified}
+  jsonLd={jsonLd}
+>
   <article>
     <header>
       <h1>{title}</h1>
       <div class="meta">
-        {date && <time datetime={date}>{new Date(date).toLocaleDateString()}</time>}
+        {date && <time datetime={date}>{new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</time>}
         {author && <span>by {author.name}</span>}
         {readingTime && <span>{readingTime} min read</span>}
       </div>
@@ -375,6 +450,7 @@ const pageDescription = seo?.description || excerpt || '';
         width={featuredImage.width}
         height={featuredImage.height}
         loading="eager"
+        style={featuredImage.width && featuredImage.height ? \`aspect-ratio: \${featuredImage.width}/\${featuredImage.height}\` : undefined}
       />
     )}
 
@@ -500,7 +576,7 @@ function generateRssFeed(site: SiteConfig): string {
   return `import rss from '@astrojs/rss';
 import { getCollection } from 'astro:content';
 
-export async function GET(context: { site: URL }) {
+export async function GET() {
   const posts = (await getCollection('blog'))
     .filter(post => !post.data.draft)
     .sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime());
@@ -508,7 +584,7 @@ export async function GET(context: { site: URL }) {
   return rss({
     title: '${title}',
     description: '${description}',
-    site: context.site,
+    site: import.meta.env.SITE,
     items: posts.map(post => ({
       title: post.data.title,
       pubDate: new Date(post.data.date),

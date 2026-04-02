@@ -2,6 +2,16 @@
 
 WordPress-to-Astro migration MCP server with multi-site support.
 
+## Astro Target Version: 6.0
+
+- Generates Astro 6 projects (Content Layer API, Zod 4, Fonts API)
+- Requires Node.js 22.12+ (generates .nvmrc)
+- Adapter versions: Vercel 9, Netlify 7, Cloudflare 13
+- Zod imported from `astro/zod` (not `astro:content`)
+- Content collections use `glob` loader from `astro/loaders`
+- JSON-LD structured data on post pages
+- Responsive image layout with aspect-ratio preservation
+
 ## Project Structure
 
 ```

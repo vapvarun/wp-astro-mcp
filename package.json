@@ -1,6 +1,6 @@
 {
   "name": "wp-astro-mcp",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "MCP server for migrating WordPress sites to Astro with multi-site support and GitHub publishing",
   "main": "dist/index.js",
   "type": "module",
