@@ -12,7 +12,7 @@
 
 ## Why This Exists
 
-Running WordPress as a headless CMS with an Astro frontend gives you the best of both worlds: WordPress's mature content management for editors, and Astro's static performance for visitors. But wiring it all up involves dozens of tedious steps: fetching content via API, cleaning up page builder markup, resolving shortcodes, building frontmatter, setting up content collections, handling media URLs, generating redirects, deploying, and keeping content in sync as editors publish new posts.
+Running WordPress as a headless CMS with an Astro frontend gives you the best of both worlds: WordPress's mature content management for editors, and Astro's static performance for visitors. But wiring it all up involves dozens of tedious steps: fetching content via API, resolving shortcodes, building frontmatter, setting up content collections, handling media URLs, generating redirects, deploying, and keeping content in sync as editors publish new posts.
 
 This MCP server handles all of it. Tell Claude to set up your Astro frontend, and it orchestrates 55 specialized tools to get it done -- and keeps your Astro site current with every WordPress content change.
 
@@ -72,7 +72,7 @@ Add my WordPress site example.com with username admin
 and app password "xxxx xxxx xxxx xxxx xxxx xxxx"
 ```
 
-Claude will register the site, auto-detect its capabilities (SEO plugin, page builder, ACF, post types), and guide you through setting up the Astro frontend.
+Claude will register the site, auto-detect its capabilities (SEO plugin, ACF, post types, taxonomies), and guide you through setting up the Astro frontend.
 
 ---
 
@@ -106,18 +106,19 @@ Ongoing: WordPress content changes --> sync tools --> Astro rebuild --> live sit
 Every post goes through a 13-step conversion to generate the Astro content layer:
 
 1. **Sanitize** -- DOMPurify removes XSS vectors while preserving content
-2. **Resolve shortcodes** -- 20+ built-in handlers (gallery, video, WPBakery, Divi, CF7) + custom per-site rules
-3. **Clean page builders** -- Strip Elementor/WPBakery/Divi wrapper divs, keep content
-4. **Process Gutenberg** -- Remove block comments (`<!-- wp:paragraph -->`), preserve content
-5. **Normalize HTML** -- Decode entities, remove empty paragraphs, clean inline styles
-6. **Convert to Markdown** -- Turndown with 12 WordPress-specific rules (captions, galleries, code blocks, embeds)
-7. **Rewrite links** -- Internal WordPress URLs -> Astro paths using URL map
-8. **Rewrite media** -- Swap domains for media URLs (e.g., `example.com` -> `app.example.com`)
-9. **Clean artifacts** -- Remove conversion leftovers, fix double-encoded entities
-10. **Process embeds** -- YouTube/Vimeo iframes -> plain URLs
-11. **Handle galleries** -- WordPress galleries -> image grids
-12. **Fix whitespace** -- Ensure proper spacing around headings, lists, code blocks
-13. **Validate** -- Flag remaining HTML, broken images, content loss
+2. **Resolve shortcodes** -- Built-in handlers (gallery, video, audio, caption) + custom per-site rules
+3. **Process Gutenberg** -- Remove block comments (`<!-- wp:paragraph -->`), preserve content
+4. **Normalize HTML** -- Decode entities, remove empty paragraphs, clean inline styles
+5. **Convert to Markdown** -- Turndown with WordPress-specific rules (captions, galleries, code blocks, embeds)
+6. **Rewrite links** -- Internal WordPress URLs -> Astro paths using URL map
+7. **Rewrite media** -- Swap domains for media URLs (e.g., `example.com` -> `app.example.com`)
+8. **Clean artifacts** -- Remove conversion leftovers, fix double-encoded entities
+9. **Process embeds** -- YouTube/Vimeo iframes -> plain URLs
+10. **Handle galleries** -- WordPress galleries -> image grids
+11. **Fix whitespace** -- Ensure proper spacing around headings, lists, code blocks
+12. **Validate** -- Flag remaining HTML, broken images, content loss
+
+**Page builder note:** Content built with page builders (Elementor, WPBakery, Divi, etc.) comes through the REST API as deeply nested HTML -- far more markup than actual content. The pipeline extracts text content from this HTML, but complex layouts (multi-column sections, styled cards, animated elements) will lose their visual structure. This tool works best with standard WordPress content (Gutenberg blocks, classic editor). For page-builder-heavy sites, review output with `convert_preview` and expect some manual cleanup.
 
 ---
 
@@ -140,13 +141,13 @@ WordPress stays at `app.myblog.com` for content management. Astro serves `myblog
 
 ### Add Astro Frontend to a Business Website
 
-A company site with Elementor, Yoast SEO, ACF custom fields, and 500 pages.
+A company site with Yoast SEO, ACF custom fields, and 500 posts/pages using the standard editor.
 
 ```
-1. "Add site company.com" (auto-detects Elementor, Yoast, ACF)
-2. "Run a content audit" (finds shortcodes, page builder usage, complexity)
+1. "Add site company.com" (auto-detects Yoast, ACF, post types)
+2. "Run a content audit" (finds shortcodes, blocks, embeds, complexity)
 3. "Configure shortcodes for CF7 forms and custom widgets"
-4. "Preview 5 pages to check Elementor conversion quality"
+4. "Preview 5 posts to check conversion quality"
 5. "Export all content, media URLs pointing to app.company.com"
 6. "Generate Netlify redirects and push to GitHub"
 ```
@@ -160,7 +161,7 @@ An agency managing 12 WordPress sites that all need fast Astro frontends.
 ```
 1. "Add all my sites" (register each with credentials)
 2. "List all sites" (see capabilities and content counts)
-3. "Analyze buddyxtheme.com" (1,941 posts, RankMath, Elementor)
+3. "Analyze buddyxtheme.com" (1,941 posts, RankMath, ACF)
 4. "Export buddyxtheme.com with year/month directories"
 5. "Now do vapvarun.com" (switch sites seamlessly)
 ```
@@ -206,7 +207,7 @@ Here is the complete workflow for adding an Astro frontend to your WordPress sit
 
 ```
 site_add          -> Register site, auto-detect WP version, SEO plugin,
-                    page builder, ACF, WooCommerce, post types, taxonomies
+                    ACF, WooCommerce, post types, taxonomies
 site_analyze      -> Count all content, assess site readiness, estimate build time
 site_export_config -> Set output directory, media strategy, deploy platform
 ```
@@ -214,8 +215,8 @@ site_export_config -> Set output directory, media strategy, deploy platform
 ### Phase 2: Audit and Prepare
 
 ```
-content_audit     -> Sample posts, detect shortcodes, blocks, page builders,
-                    embeds, galleries, tables, forms -- assess complexity
+content_audit     -> Sample posts, detect shortcodes, blocks, embeds,
+                    galleries, tables, forms -- assess complexity
 shortcode_scan    -> Find all shortcodes in use across the site
 shortcode_configure -> Set handling rules (strip, keep content, map to component)
 cache_terms       -> Pre-cache all taxonomy terms in SQLite
@@ -275,7 +276,7 @@ sync_reset        -> Clear sync tracking to force a full re-check
 
 | Tool | Description |
 |------|-------------|
-| `site_add` | Register a WordPress site with credentials. Auto-detects WP version, REST namespaces, SEO plugin (Yoast/RankMath/AIOSEO), page builder (Elementor/WPBakery/Divi/Beaver/Bricks/Oxygen), ACF, WooCommerce, post types, taxonomies. |
+| `site_add` | Register a WordPress site with credentials. Auto-detects WP version, REST namespaces, SEO plugin (Yoast/RankMath/AIOSEO), ACF, WooCommerce, post types, taxonomies. |
 | `site_test` | Re-test connection and refresh detected capabilities. |
 | `site_list` | List all registered sites with status, version, and content stats. |
 | `site_get` | Get full details for a site (credentials are masked). |
@@ -301,7 +302,7 @@ sync_reset        -> Clear sync tracking to force a full re-check
 | `extract_widgets` | Fetch sidebar/widget areas (WP 5.8+). |
 | `cache_terms` | Bulk cache ALL terms for ALL taxonomies in SQLite. Run before generating content layer. |
 | `cache_authors` | Bulk cache ALL authors in SQLite. Run before generating content layer. |
-| `content_audit` | Sample posts, analyze shortcodes/blocks/page builders/embeds, assess complexity distribution. |
+| `content_audit` | Sample posts, analyze shortcodes/blocks/embeds, assess complexity distribution. |
 
 ### Transform (6 tools)
 
@@ -553,11 +554,8 @@ Astro 5.x with content collections using the glob loader pattern.
 
 ### WordPress Compatibility
 
-**Q: Does it work with Elementor?**
-Yes. It detects Elementor from REST API namespaces and post meta, strips the wrapper `<div>` elements (sections, columns, widgets), and preserves the actual content.
-
-**Q: Does it work with WPBakery / Divi / Beaver Builder?**
-Yes. Page builder detection covers WPBakery (`[vc_row]` shortcodes), Divi (`et_pb_` classes), Beaver Builder (`fl-` classes), Bricks, and Oxygen. Builder markup is cleaned and content is extracted.
+**Q: Does it work with page builders (Elementor, WPBakery, Divi, etc.)?**
+Partially. Page builders store content as complex nested HTML with more markup than actual text. The REST API serves this rendered HTML, and the converter extracts the text content. However, multi-column layouts, styled sections, and visual design elements will not carry over -- you get the content, not the layout. This tool works best with standard Gutenberg or classic editor content. For page-builder-heavy sites, use `convert_preview` to assess quality and expect manual work on complex pages.
 
 **Q: Does it preserve Yoast/RankMath SEO data?**
 Yes. SEO metadata (title, description, canonical URL, OG image, robots, focus keyword) is extracted from Yoast (`yoast_head_json`) or RankMath (`rank_math_seo`) and included in the Astro frontmatter.
@@ -569,7 +567,7 @@ Yes. ACF data from the REST API is normalized: images become `{url, alt, width, 
 All registered post types are auto-detected and can be included in the Astro content layer. Each CPT gets its own content collection directory.
 
 **Q: Does it handle WordPress shortcodes?**
-Yes. 20+ shortcodes are handled out of the box (gallery, video, audio, caption, WPBakery elements, Divi modules, Contact Form 7, WPForms, Gravity Forms, buttons, tabs, accordions). You can configure additional shortcodes per-site with `shortcode_configure`.
+Yes. Common WordPress shortcodes are handled out of the box (gallery, video, audio, caption, embed). You can configure additional shortcodes per-site with `shortcode_configure` -- set them to strip, keep content, remove, or map to an Astro component.
 
 ### Content Sync and Ongoing Updates
 
@@ -639,10 +637,11 @@ In a SQLite database at `data/wp-astro.db` (gitignored). Contains generation job
 - Run `export_resume` to continue processing
 - Run `export_retry` if posts failed
 
-### "Page builder content looks wrong"
-- Run `content_audit` to see which builders are detected
-- Run `convert_preview` to inspect specific posts
-- The pipeline strips builder wrappers and keeps content -- some complex layouts may need manual review
+### "Page builder content looks messy"
+- Page builders (Elementor, WPBakery, Divi) produce deeply nested HTML -- the converter extracts text but loses layout structure
+- Run `convert_preview` to inspect how specific posts convert
+- For complex builder pages, consider keeping them as HTML (`content_format: "json"`) or rebuilding layouts in Astro components
+- Standard Gutenberg and classic editor content converts cleanly
 
 ### Astro build OOM with many posts (500+)
 
