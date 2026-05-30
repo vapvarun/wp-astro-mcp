@@ -126,27 +126,6 @@ export function registerUrlMapping(
   ).run(siteId, wpUrl, astroUrl, postType || null, wpPostId || null);
 }
 
-/**
- * Batch register URL mappings
- */
-export function registerUrlMappingsBatch(
-  siteId: string,
-  mappings: Array<{ wpUrl: string; astroUrl: string; postType?: string; wpPostId?: number }>
-): void {
-  const db = database.getDatabase();
-  const insert = db.prepare(
-    `INSERT OR REPLACE INTO url_map (site_id, wp_url, astro_url, post_type, wp_post_id)
-     VALUES (?, ?, ?, ?, ?)`
-  );
-
-  const insertAll = db.transaction(() => {
-    for (const m of mappings) {
-      insert.run(siteId, m.wpUrl, m.astroUrl, m.postType || null, m.wpPostId || null);
-    }
-  });
-  insertAll();
-}
-
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

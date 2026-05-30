@@ -1,6 +1,6 @@
 /**
  * HTML-to-Markdown Conversion Pipeline
- * 13-step conversion using Turndown with custom WordPress-specific rules.
+ * Conversion using Turndown with custom WordPress-specific rules.
  *
  * Pipeline steps:
  * 1. Sanitize HTML (DOMPurify)
@@ -9,13 +9,10 @@
  * 4. Process Gutenberg block comments
  * 5. Normalize HTML structure
  * 6. Convert to Markdown (Turndown + GFM)
- * 7. Rewrite internal links
- * 8. Rewrite media URLs
- * 9. Clean up Markdown artifacts
- * 10. Process embeds
- * 11. Handle galleries
- * 12. Fix whitespace and spacing
- * 13. Final validation
+ * 7. Rewrite internal links and media URLs
+ * 8. Clean up Markdown artifacts
+ * 9. Fix whitespace and spacing
+ * 10. Final validation
  */
 
 import TurndownService from 'turndown';
@@ -361,24 +358,25 @@ export function convertPost(
   // Step 5: Normalize HTML structure
   html = normalizeHtml(html);
 
-  // Step 6: Convert to Markdown
+  // Step 6: Rewrite internal links and media URLs.
+  // This MUST run on the HTML, before Turndown — the rewriter matches href/src
+  // attributes, which no longer exist once Turndown has converted anchors and
+  // images into Markdown [text](url) / ![alt](url) syntax. (Running it after
+  // Turndown silently no-ops, which was a latent bug.)
+  const linkResult = rewriteContentLinks(html, site);
+  html = linkResult.content;
+
+  // Step 7: Convert to Markdown
   const td = getTurndown();
   let markdown = td.turndown(html);
 
-  // Step 7 & 8: Rewrite links and media URLs
-  const linkResult = rewriteContentLinks(markdown, site);
-  markdown = linkResult.content;
-
-  // Step 9: Clean up Markdown artifacts
+  // Step 8: Clean up Markdown artifacts
   markdown = cleanMarkdownArtifacts(markdown);
 
-  // Step 10: Process embeds
-  markdown = processEmbeds(markdown);
-
-  // Step 12: Fix whitespace
+  // Step 9: Fix whitespace
   markdown = fixWhitespace(markdown);
 
-  // Step 13: Final validation
+  // Step 10: Final validation
   const validationIssues = validateMarkdown(markdown, post);
   issues.push(...validationIssues);
 
@@ -484,7 +482,7 @@ function normalizeHtml(html: string): string {
 }
 
 /**
- * Step 9: Clean up Markdown artifacts
+ * Step 8: Clean up Markdown artifacts
  */
 function cleanMarkdownArtifacts(md: string): string {
   md = md.replace(/\n{4,}/g, '\n\n\n');
@@ -501,14 +499,7 @@ function cleanMarkdownArtifacts(md: string): string {
 }
 
 /**
- * Step 10: Process embed URLs (kept as-is for Astro to handle)
- */
-function processEmbeds(md: string): string {
-  return md;
-}
-
-/**
- * Step 12: Fix whitespace and spacing
+ * Step 9: Fix whitespace and spacing
  */
 function fixWhitespace(md: string): string {
   md = md.replace(/([^\n])\n(#{1,6}\s)/g, '$1\n\n$2');
@@ -523,7 +514,7 @@ function fixWhitespace(md: string): string {
 }
 
 /**
- * Step 13: Validate final Markdown
+ * Step 10: Validate final Markdown
  */
 function validateMarkdown(md: string, post: WPPost): ConversionIssue[] {
   const issues: ConversionIssue[] = [];
