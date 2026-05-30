@@ -65,13 +65,15 @@ export const extractTools: Tool[] = [
   {
     name: 'extract_all_ids',
     description:
-      'Fetch all post IDs for a post type (lightweight). Used for two-phase fetch strategy on large sites.',
+      'Fetch post IDs for a post type (lightweight). Used for two-phase fetch strategy on large sites. Returns a bounded page of IDs (default 1000, max 10000) plus total/has_more/next_offset metadata — use offset to page through all IDs.',
     inputSchema: {
       type: 'object',
       properties: {
         site_id: { type: 'string', description: 'Site ID (uses default if omitted)' },
         post_type: { type: 'string', description: 'Post type slug (default: post)' },
         status: { type: 'string', description: 'Post status (default: any)' },
+        limit: { type: 'number', description: 'Max IDs to return in this response (default 1000, max 10000). All IDs are still counted in total.' },
+        offset: { type: 'number', description: 'Number of IDs to skip before returning this page (default 0). Combine with limit to page through large sites.' },
       },
     },
   },
@@ -90,11 +92,13 @@ export const extractTools: Tool[] = [
   },
   {
     name: 'extract_authors',
-    description: 'Fetch all authors/users from the site.',
+    description: 'Fetch authors/users from the site. Returns a bounded page (default 1000, max 10000) plus total/has_more/next_offset metadata — use offset to page through all authors.',
     inputSchema: {
       type: 'object',
       properties: {
         site_id: { type: 'string', description: 'Site ID (uses default if omitted)' },
+        limit: { type: 'number', description: 'Max authors to return in this response (default 1000, max 10000). All authors are still counted in total.' },
+        offset: { type: 'number', description: 'Number of authors to skip before returning (default 0). Combine with limit to page through large author lists.' },
       },
     },
   },
@@ -168,7 +172,7 @@ export const extractTools: Tool[] = [
   {
     name: 'cache_authors',
     description:
-      'Fetch ALL authors and cache them in SQLite. Should be run before a full export for fast author lookups.',
+      'Fetch ALL authors and cache them in SQLite. Should be run before a full export for fast author lookups. Caches every author but returns only a count plus a small sample (first 20).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -316,13 +320,23 @@ export const extractHandlers: Record<string, (params: unknown) => Promise<unknow
       const ptInfo = site.post_types?.find((pt) => pt.slug === postType);
       const restBase = ptInfo?.rest_base || (postType === 'post' ? 'posts' : postType === 'page' ? 'pages' : postType);
 
+      // Fetch ALL ids internally so total is accurate, then return a bounded slice.
       const ids = await wpClient.fetchAllPostIds(siteId, restBase, parsed.status || 'any');
+
+      const limit = parsed.limit ?? 1000;
+      const offset = parsed.offset ?? 0;
+      const slice = ids.slice(offset, offset + limit);
+      const hasMore = offset + slice.length < ids.length;
 
       return formatSuccessResponse({
         site_id: siteId,
         post_type: postType,
         total: ids.length,
-        ids,
+        returned: slice.length,
+        offset,
+        has_more: hasMore,
+        next_offset: hasMore ? offset + slice.length : null,
+        ids: slice,
       });
     } catch (error) {
       return formatErrorResponse(error);
@@ -369,12 +383,22 @@ export const extractHandlers: Record<string, (params: unknown) => Promise<unknow
       const parsed = extractAuthorsSchema.parse(params);
       const siteId = siteManager.resolveSiteId(parsed.site_id);
 
+      // Fetch ALL authors internally so total is accurate, then return a bounded slice.
       const authors = await wpClient.fetchAuthors(siteId);
+
+      const limit = parsed.limit ?? 1000;
+      const offset = parsed.offset ?? 0;
+      const slice = authors.slice(offset, offset + limit);
+      const hasMore = offset + slice.length < authors.length;
 
       return formatSuccessResponse({
         site_id: siteId,
         total: authors.length,
-        authors: authors.map((a) => ({
+        returned: slice.length,
+        offset,
+        has_more: hasMore,
+        next_offset: hasMore ? offset + slice.length : null,
+        authors: slice.map((a) => ({
           id: a.id,
           name: a.name,
           slug: a.slug,
@@ -596,10 +620,16 @@ export const extractHandlers: Record<string, (params: unknown) => Promise<unknow
 
       database.audit(siteId, 'cache_authors', { total: authors.length });
 
+      // All authors are cached above; the response only carries a count plus a small sample
+      // to avoid echoing potentially thousands of authors back to the model.
+      const SAMPLE_SIZE = 20;
       return formatSuccessResponse({
         site_id: siteId,
         total_cached: authors.length,
-        authors: authors.map((a) => ({ id: a.id, name: a.name, slug: a.slug })),
+        total: authors.length,
+        sample_size: Math.min(SAMPLE_SIZE, authors.length),
+        has_more: authors.length > SAMPLE_SIZE,
+        sample: authors.slice(0, SAMPLE_SIZE).map((a) => ({ id: a.id, name: a.name, slug: a.slug })),
       });
     } catch (error) {
       return formatErrorResponse(error);

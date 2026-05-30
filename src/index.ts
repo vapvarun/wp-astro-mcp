@@ -13,13 +13,18 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
+import { createRequire } from 'module';
+
 import { getToolsForMode, getHandlersForMode } from './tools/index.js';
 import { database } from './config/database.js';
 import { formatErrorResponse } from './utils/errors.js';
 import logger from './utils/logger.js';
 
+const require = createRequire(import.meta.url);
+const pkg = require('../package.json') as { version: string };
+
 const SERVER_NAME = 'wp-astro-mcp';
-const SERVER_VERSION = '1.0.0';
+const SERVER_VERSION = pkg.version;
 const SERVER_MODE = process.env.WP_ASTRO_MODE || 'router';
 
 // Set log level from env

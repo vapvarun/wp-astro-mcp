@@ -2,6 +2,7 @@
  * Custom error classes and response formatters
  */
 
+import { ZodError } from 'zod';
 import type { ToolResponse } from '../types/index.js';
 
 export class WPAstroError extends Error {
@@ -86,6 +87,36 @@ export class RateLimitError extends WPAstroError {
  * Format an error into an MCP tool response
  */
 export function formatErrorResponse(error: unknown): ToolResponse {
+  // Zod validation errors → field-level messages so the model can self-correct.
+  // This matters in router mode, where per-action schemas aren't visible up front.
+  if (error instanceof ZodError) {
+    const fieldErrors = error.issues.map((i) => ({
+      field: i.path.join('.') || '(root)',
+      message: i.message,
+    }));
+    const summary = fieldErrors
+      .map((f) => `${f.field}: ${f.message}`)
+      .join('; ');
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(
+            {
+              error: true,
+              code: 'VALIDATION_ERROR',
+              message: `Invalid input — ${summary}`,
+              details: fieldErrors,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+      isError: true,
+    };
+  }
+
   if (error instanceof WPAstroError) {
     return {
       content: [

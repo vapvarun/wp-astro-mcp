@@ -9,6 +9,7 @@
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { routerTools, createRouterHandlers } from './router.js';
+import { PROMOTED_ACTIONS, annotateTool } from './metadata.js';
 import { siteTools, siteHandlers } from './sites.js';
 import { extractTools, extractHandlers } from './extract.js';
 import { transformTools, transformHandlers } from './transform.js';
@@ -54,18 +55,45 @@ export const allHandlers: Record<
  */
 export const routerHandlers = createRouterHandlers(allTools, allHandlers);
 
+/** All tools with MCP annotations (readOnlyHint/destructiveHint/title) stamped on. */
+const annotatedAllTools: Tool[] = allTools.map(annotateTool);
+
 /**
- * Get tools for a given mode
+ * Curated high-value actions exposed as first-class, annotated tools in router
+ * mode — so the model sees their full input schema at tools/list time instead of
+ * needing a wp_astro_describe round-trip (hybrid design, M2).
+ */
+const promotedTools: Tool[] = annotatedAllTools.filter((t) =>
+  PROMOTED_ACTIONS.includes(t.name)
+);
+
+const promotedHandlers: Record<string, (params: unknown) => Promise<unknown>> =
+  Object.fromEntries(
+    PROMOTED_ACTIONS.filter((name) => allHandlers[name]).map((name) => [
+      name,
+      allHandlers[name],
+    ])
+  );
+
+/**
+ * Get tools for a given mode.
+ * - 'full': every action as a first-class annotated tool (maximum discoverability)
+ * - 'router' (default): the 3 router tools + the promoted high-value tools, a
+ *   hybrid that keeps the tools/list payload small while restoring schema-driven
+ *   discoverability and safety annotations for the actions that get used most.
  */
 export function getToolsForMode(mode: string = 'router'): Tool[] {
-  return mode === 'full' ? allTools : routerTools;
+  return mode === 'full' ? annotatedAllTools : [...routerTools, ...promotedTools];
 }
 
 /**
- * Get handlers for a given mode
+ * Get handlers for a given mode. In router mode the promoted actions are callable
+ * both by their own name (first-class) and via wp_astro_run.
  */
 export function getHandlersForMode(
   mode: string = 'router'
 ): Record<string, (params: unknown) => Promise<unknown>> {
-  return mode === 'full' ? allHandlers : routerHandlers;
+  return mode === 'full'
+    ? allHandlers
+    : { ...routerHandlers, ...promotedHandlers };
 }

@@ -9,88 +9,24 @@
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { formatSuccessResponse, formatErrorResponse } from '../utils/errors.js';
+import {
+  TOOL_CATEGORIES,
+  READ_ONLY_ACTIONS,
+  DESTRUCTIVE_ACTIONS,
+} from './metadata.js';
 
-/**
- * Tool categories for organization
- */
-export const TOOL_CATEGORIES: Record<string, string[]> = {
-  site: [
-    'site_add',
-    'site_test',
-    'site_list',
-    'site_get',
-    'site_update',
-    'site_remove',
-    'site_set_default',
-    'site_analyze',
-    'site_export_config',
-  ],
-  extract: [
-    'extract_posts',
-    'extract_post',
-    'extract_all_ids',
-    'extract_terms',
-    'extract_authors',
-    'extract_media',
-    'extract_menus',
-    'extract_comments',
-    'extract_settings',
-    'extract_widgets',
-    'cache_terms',
-    'cache_authors',
-    'content_audit',
-  ],
-  transform: [
-    'convert_post',
-    'convert_preview',
-    'convert_html',
-    'shortcode_list',
-    'shortcode_configure',
-    'shortcode_scan',
-  ],
-  // Phase 4: output, media
-  output: [
-    'scaffold_project',
-    'write_post',
-    'write_batch',
-    'generate_redirects',
-    'list_output',
-  ],
-  media: [
-    'media_audit',
-    'media_rewrite',
-  ],
-  github: [
-    'github_init',
-    'github_create_repo',
-    'github_commit',
-    'github_push',
-    'github_status',
-    'github_deploy_config',
-  ],
-  export: [
-    'export_plan',
-    'export_start',
-    'export_resume',
-    'export_progress',
-    'export_retry',
-    'export_validate',
-    'export_cleanup',
-  ],
-  sync: [
-    'sync_check',
-    'sync_pull',
-    'sync_delete',
-    'sync_full',
-    'sync_status',
-    'sync_schedule',
-    'sync_reset',
-    'sync_webhook',
-  ],
-  wizard: [
-    'setup_wizard',
-  ],
-};
+/** Extract the list of required param names from a tool's JSON input schema. */
+function requiredParams(tool: Tool | undefined): string[] {
+  const req = (tool?.inputSchema as { required?: unknown } | undefined)?.required;
+  return Array.isArray(req) ? (req as string[]) : [];
+}
+
+/** One-word safety classification surfaced in help/describe output. */
+function actionKind(name: string): 'read-only' | 'destructive' | 'write' {
+  if (READ_ONLY_ACTIONS.has(name)) return 'read-only';
+  if (DESTRUCTIVE_ACTIONS.has(name)) return 'destructive';
+  return 'write';
+}
 
 /**
  * Router tool definitions
@@ -111,7 +47,9 @@ Common workflows:
 Quick actions:
 - site_list — see all registered sites
 - sync_check — see what changed in WordPress since last sync
-- sync_full — sync everything and optionally auto-commit`,
+- sync_full — sync everything and optionally auto-commit
+
+Note: common actions (site_add, site_list, site_analyze, content_audit, export_plan/start/resume/progress, sync_check, sync_full, github_push) are also exposed as standalone tools with full schemas — prefer those when available. Use wp_astro_help for the full action list and wp_astro_describe({ action }) for any action's input schema.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -219,6 +157,8 @@ export function createRouterHandlers(
           const tool = toolMap.get(name);
           return {
             name,
+            kind: actionKind(name),
+            required: requiredParams(tool),
             description: tool?.description?.split('\n')[0] || 'No description',
           };
         });
@@ -260,6 +200,8 @@ export function createRouterHandlers(
 
       return formatSuccessResponse({
         name: tool.name,
+        kind: actionKind(action),
+        required: requiredParams(tool),
         description: tool.description,
         inputSchema: tool.inputSchema,
         usage: `wp_astro_run({ action: "${action}", params: {...} })`,

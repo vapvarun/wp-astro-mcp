@@ -31,6 +31,19 @@ export const extractTermsSchema = z.object({
 
 export const extractAuthorsSchema = z.object({
   site_id: z.string().optional().describe('Site ID (uses default if omitted)'),
+  limit: z
+    .number()
+    .min(1)
+    .max(10000)
+    .default(1000)
+    .optional()
+    .describe('Max authors to return in this response (default 1000, max 10000). All authors are still counted in total.'),
+  offset: z
+    .number()
+    .min(0)
+    .default(0)
+    .optional()
+    .describe('Number of authors to skip before returning (for paging through large author lists, default 0).'),
 });
 
 export const extractMediaSchema = z.object({
@@ -71,6 +84,19 @@ export const extractAllIdsSchema = z.object({
   site_id: z.string().optional().describe('Site ID (uses default if omitted)'),
   post_type: z.string().optional().describe('Post type slug (default: post)'),
   status: z.string().optional().describe('Post status (default: any)'),
+  limit: z
+    .number()
+    .min(1)
+    .max(10000)
+    .default(1000)
+    .optional()
+    .describe('Max IDs to return in this response (default 1000, max 10000). All IDs are still counted in total; use offset to page.'),
+  offset: z
+    .number()
+    .min(0)
+    .default(0)
+    .optional()
+    .describe('Number of IDs to skip before returning this page (default 0). Combine with limit to page through large sites.'),
 });
 
 export const contentAuditSchema = z.object({
