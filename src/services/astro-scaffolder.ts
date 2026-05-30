@@ -31,6 +31,7 @@ export function scaffoldProject(
   const deployPlatform = config.deploy_platform || 'none';
   const contentFormat = config.content_format || 'md';
   const useJsonMode = contentFormat === 'json';
+  const useTailwind = componentLib === 'starwind';
 
   // Ensure output directory exists
   fs.mkdirSync(outputDir, { recursive: true });
@@ -53,7 +54,7 @@ export function scaffoldProject(
   writeFile('package.json', generatePackageJson(site, componentLib, deployPlatform));
 
   // 2. astro.config.mjs
-  writeFile('astro.config.mjs', generateAstroConfig(site, deployPlatform));
+  writeFile('astro.config.mjs', generateAstroConfig(site, deployPlatform, componentLib));
 
   // 3. tsconfig.json
   writeFile('tsconfig.json', JSON.stringify({
@@ -69,11 +70,14 @@ export function scaffoldProject(
     writeFile('src/content.config.ts', generateContentConfig(site));
   }
 
+  // 4b. Global content stylesheet (framework-free baseline + Tailwind prose when enabled)
+  writeFile('src/styles/global.css', generateGlobalCss(useTailwind));
+
   // 5. Base layout
   writeFile('src/layouts/BaseLayout.astro', generateBaseLayout(site));
 
   // 6. Blog post layout
-  writeFile('src/layouts/PostLayout.astro', useJsonMode ? generatePostLayoutJson() : generatePostLayout());
+  writeFile('src/layouts/PostLayout.astro', useJsonMode ? generatePostLayoutJson(useTailwind) : generatePostLayout(useTailwind));
 
   // 7. Index page
   writeFile('src/pages/index.astro', useJsonMode ? generateIndexPageJson(site) : generateIndexPage(site));
@@ -95,7 +99,7 @@ export function scaffoldProject(
 
   // 10d. Preview page (SSR — requires hybrid output mode with an adapter)
   if (deployPlatform !== 'none') {
-    writeFile('src/pages/preview.astro', generatePreviewPage(site));
+    writeFile('src/pages/preview.astro', generatePreviewPage(site, useTailwind));
   }
 
   // 11. RSS feed (optional)
@@ -184,6 +188,7 @@ function generatePackageJson(site: SiteConfig, componentLib: string, deployPlatf
     deps['@starwindui/core'] = '^0.2.0';
     deps['tailwindcss'] = '^4.0.0';
     deps['@tailwindcss/vite'] = '^4.0.0';
+    deps['@tailwindcss/typography'] = '^0.5.16';
   }
 
   const pkg = {
@@ -205,12 +210,17 @@ function generatePackageJson(site: SiteConfig, componentLib: string, deployPlatf
   return JSON.stringify(pkg, null, 2);
 }
 
-function generateAstroConfig(site: SiteConfig, deployPlatform: string): string {
+function generateAstroConfig(site: SiteConfig, deployPlatform: string, componentLib: string): string {
+  const useTailwind = componentLib === 'starwind';
   const integrations: string[] = ['sitemap()'];
   const imports: string[] = [
     "import { defineConfig } from 'astro/config';",
     "import sitemap from '@astrojs/sitemap';",
   ];
+
+  if (useTailwind) {
+    imports.push("import tailwindcss from '@tailwindcss/vite';");
+  }
 
   if (deployPlatform === 'vercel') {
     imports.push("import vercel from '@astrojs/vercel';");
@@ -251,6 +261,10 @@ export default defineConfig({
       config += `\n  adapter: ${adapterMap[deployPlatform]},`;
       config += `\n  output: 'hybrid',`;
     }
+  }
+
+  if (useTailwind) {
+    config += `\n  vite: { plugins: [tailwindcss()] },`;
   }
 
   config += '\n});\n';
@@ -328,10 +342,73 @@ ${collections.join(',\n')}
 `;
 }
 
+function generateGlobalCss(useTailwind: boolean): string {
+  const tailwind = useTailwind
+    ? `/* ---- Tailwind (only when enabled) ---- */
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+`
+    : '';
+
+  return `${tailwind}/* Content typography — baseline (backs off when Tailwind \`prose\` is applied) */
+.content:not(.prose){max-width:70ch;font-size:1.0625rem;line-height:1.75;color:#1f2937;}
+.content:not(.prose) > * + *{margin-top:1.25em;}
+.content:not(.prose) h1,.content:not(.prose) h2,.content:not(.prose) h3,.content:not(.prose) h4{line-height:1.25;font-weight:700;color:#111827;margin-top:2em;margin-bottom:.6em;}
+.content:not(.prose) h2{font-size:1.6rem;}
+.content:not(.prose) h3{font-size:1.3rem;}
+.content:not(.prose) a{color:#2563eb;text-decoration:underline;text-underline-offset:2px;}
+.content:not(.prose) a:hover{color:#1d4ed8;}
+.content:not(.prose) ul,.content:not(.prose) ol{padding-left:1.5em;}
+.content:not(.prose) li + li{margin-top:.35em;}
+.content:not(.prose) blockquote{border-left:3px solid #e5e7eb;padding-left:1em;color:#4b5563;font-style:italic;}
+.content:not(.prose) pre{background:#0f172a;color:#e2e8f0;padding:1rem 1.25rem;border-radius:.5rem;overflow-x:auto;font-size:.9rem;line-height:1.6;}
+.content:not(.prose) :not(pre) > code{background:#f1f5f9;padding:.15em .4em;border-radius:.3em;font-size:.9em;}
+.content:not(.prose) table{width:100%;border-collapse:collapse;font-size:.95rem;}
+.content:not(.prose) th,.content:not(.prose) td{border:1px solid #e5e7eb;padding:.5rem .75rem;text-align:left;}
+.content:not(.prose) hr{border:0;border-top:1px solid #e5e7eb;margin:2em 0;}
+
+/* Media — BOTH modes (also augments Tailwind prose) */
+.content img{max-width:100%;height:auto;border-radius:.5rem;}
+.content figure{margin:1.5em 0;}
+.content figure img{display:block;margin-inline:auto;}
+.content figcaption{text-align:center;font-size:.875rem;color:#6b7280;margin-top:.5em;}
+.content iframe{max-width:100%;}
+
+/* WordPress block compatibility — JSON mode retains these classes (prose doesn't know them) */
+.content .aligncenter{display:block;margin-inline:auto;}
+.content .alignleft{float:left;margin:.3em 1.25em 1em 0;}
+.content .alignright{float:right;margin:.3em 0 1em 1.25em;}
+.content .alignwide,.content figure.alignwide{width:min(100%,1100px);margin-inline:auto;}
+.content .alignfull,.content figure.alignfull{width:100vw;max-width:100vw;margin-inline:calc(50% - 50vw);}
+.content .wp-caption{max-width:100%;}
+.content .wp-caption-text,.content .wp-element-caption{text-align:center;font-size:.875rem;color:#6b7280;margin-top:.5em;}
+.content .wp-block-columns{display:flex;flex-wrap:wrap;gap:1.5rem;}
+.content .wp-block-column{flex:1 1 0;min-width:0;}
+.content .wp-block-button__link{display:inline-block;padding:.6em 1.2em;background:#2563eb;color:#fff;border-radius:.4em;text-decoration:none;}
+.content .wp-block-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.75rem;}
+.content .wp-block-gallery img{width:100%;}
+.content .wp-block-quote,.content .wp-block-pullquote{border-left:3px solid #e5e7eb;padding-left:1em;color:#4b5563;}
+.content .wp-block-code pre,.content .wp-block-preformatted pre{overflow-x:auto;}
+
+/* Responsive (≤640px) */
+@media (max-width:640px){
+  .content:not(.prose){font-size:1rem;line-height:1.7;}
+  .content:not(.prose) h2{font-size:1.4rem;}
+  .content:not(.prose) h3{font-size:1.2rem;}
+  .content .alignleft,.content .alignright{float:none;display:block;margin-inline:auto;}
+  .content .wp-block-columns{flex-direction:column;gap:1rem;}
+  .content pre{font-size:.825rem;}
+}
+`;
+}
+
 function generateBaseLayout(site: SiteConfig): string {
   const title = site.site_title || site.name;
   const tagline = site.site_tagline || '';
   return `---
+import '../styles/global.css';
+
 interface Props {
   title?: string;
   description?: string;
@@ -409,7 +486,8 @@ const fullTitle = title === siteTitle ? title : \`\${title} | \${siteTitle}\`;
 `;
 }
 
-function generatePostLayout(): string {
+function generatePostLayout(useTailwind: boolean): string {
+  const contentClass = useTailwind ? 'content prose prose-slate max-w-none' : 'content';
   return `---
 import BaseLayout from './BaseLayout.astro';
 
@@ -482,7 +560,7 @@ const jsonLd = {
       />
     )}
 
-    <div class="content">
+    <div class="${contentClass}">
       <slot />
     </div>
 
@@ -740,8 +818,9 @@ export const POST: APIRoute = async ({ request }) => {
 `;
 }
 
-function generatePreviewPage(site: SiteConfig): string {
+function generatePreviewPage(site: SiteConfig, useTailwind: boolean): string {
   const wpUrl = site.url.replace(/\/+$/, '');
+  const contentClass = useTailwind ? 'content prose prose-slate max-w-none' : 'content';
   return `---
 export const prerender = false;
 
@@ -813,7 +892,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
           />
         )}
 
-        <div class="content" set:html={post.content} />
+        <div class="${contentClass}" set:html={post.content} />
 
         {post.tags && post.tags.length > 0 && (
           <footer style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
@@ -934,7 +1013,8 @@ export function GET() {
 // This avoids Astro's markdown parsing pipeline which OOMs on large sites.
 // ============================================================
 
-function generatePostLayoutJson(): string {
+function generatePostLayoutJson(useTailwind: boolean): string {
+  const contentClass = useTailwind ? 'content prose prose-slate max-w-none' : 'content';
   return `---
 import BaseLayout from './BaseLayout.astro';
 
@@ -1023,7 +1103,7 @@ const jsonLd = {
       />
     )}
 
-    <div class="content" set:html={post.content} />
+    <div class="${contentClass}" set:html={post.content} />
 
     {post.tags && post.tags.length > 0 && (
       <footer>
