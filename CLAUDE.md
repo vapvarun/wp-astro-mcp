@@ -85,6 +85,17 @@ npm run build
 - `WP_ASTRO_DB` — Custom database path (default: data/wp-astro.db)
 - `WP_ASTRO_LOG_LEVEL` — 'debug', 'info', 'warn', 'error'
 
+## Security & Trust Model
+
+See the **Security & Trust Model** section in `README.md` for the full picture. In short:
+
+- `config/sites.json` holds WP app-passwords (and optional GitHub PAT / webhook secrets) in plaintext — gitignored, `chmod 600`, rotate if leaked.
+- Outbound requests go to operator-supplied `site.url` (no allowlist — only add trusted sites; SSRF surface).
+- GitHub PAT is never written to `.git/config`; supplied per-push via process-scoped `http.extraHeader` (may briefly appear in push argv).
+- `wp-astro-bridge`: `/health` public-but-minimal; `/verify-token` single-use + capability-checked + time-limited; webhook receiver verifies HMAC and fails closed; admin settings require `manage_options`.
+- Converted HTML is sanitized via DOMPurify (isomorphic-dompurify).
+- SQLite state in `data/wp-astro.db` (gitignored), WAL + busy_timeout for multi-process safety.
+
 ## Implementation Phases
 
 - Phase 1: Foundation (types, config, sites, router) ✓

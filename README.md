@@ -27,6 +27,7 @@ This MCP server handles all of it. Tell Claude to set up your Astro frontend, an
 - [Tool Reference](#tool-reference)
 - [Configuration](#configuration)
 - [Architecture](#architecture)
+- [Security & Trust Model](#security--trust-model)
 - [FAQ](#faq)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
@@ -584,6 +585,52 @@ url_map          -- WordPress URL -> Astro URL mappings (for redirects and link 
 shortcode_map    -- Per-site shortcode handling rules
 audit_log        -- Timestamped operation log for debugging
 ```
+
+---
+
+## Security & Trust Model
+
+This server holds WordPress credentials and makes authenticated requests on your behalf. Understand the trust boundaries before connecting production sites.
+
+### Credentials at rest
+
+- `config/sites.json` stores WordPress **application passwords in plaintext** -- and, optionally, a GitHub PAT (`github_token`) and per-site webhook secrets. There is no encryption layer; the file is the credential store.
+- It is **gitignored by default** (along with `.env`, `data/`, and `*.log`). Keep it that way.
+- Recommended hardening:
+  - `chmod 600 config/sites.json` so only your user can read it.
+  - Never commit it. Use `config/sites.example.json` (no secrets) as the shareable template.
+  - If a file leaks, **revoke and regenerate** the affected application passwords (WP admin -> Users -> Profile -> Application Passwords) and rotate the GitHub PAT.
+- Application passwords are scoped to a single WordPress user and can be revoked individually without changing the account password -- prefer them over real passwords, and grant the connecting user only the role it actually needs.
+
+### Outbound request surface (SSRF)
+
+- The server makes outbound HTTP requests to the **operator-supplied `site.url`** -- every REST call uses `${site.url}/wp-json` as its base URL. There is no allowlist; whatever base URL you configure is fetched.
+- **Only add sites you trust.** A malicious or mistyped `site.url` causes the server (and its credentials, headers, and the host it runs on) to make requests to that address. This matters most in shared or CI environments where the config may be supplied by another party.
+- Treat `config/sites.json` as a trusted input -- review entries before running tools against them.
+
+### GitHub token handling
+
+- As of the current audit fixes, the GitHub PAT is **not written to `.git/config`**. `github_create_repo` sets a token-free remote URL; `github_push` supplies authentication per-invocation via a process-scoped `-c http.extraHeader=Authorization: Basic ...` git config that is never persisted to disk.
+- Caveat: during a push the token is base64-encoded into a git argument, so it **may briefly appear in the push process's argv** (e.g. visible to other local users via `ps` on a shared machine). It is not persisted, but it is not fully invisible at runtime.
+- Remote URLs are stripped of any embedded credentials before being returned in `github_status` / `github_push` responses.
+
+### WordPress bridge plugin (`wp-astro-bridge`) auth
+
+The optional companion plugin exposes a small, deliberately-scoped surface:
+
+- **`GET /wp-json/astro-bridge/v1/health`** -- public, but minimal: anonymous callers see only `status` and `plugin_version`. Stack-fingerprinting and internal fields (WP/PHP version, configured URLs, last-webhook timing) are gated behind a `manage_options` capability check.
+- **`/wp-json/astro-bridge/v1/verify-token`** (draft preview) -- the preview token is **single-use, capability-checked, and time-limited** (5-minute TTL). It pairs an unguessable server-side secret (held in a short-lived transient) with an HMAC signed by `wp_salt`, verified timing-safely. A valid signature is **not** treated as authorization: the embedded user id is re-checked against `edit_post` for that specific post before any draft content is returned. The token may be passed via header/body to keep it out of URLs and logs.
+- **Webhook receiver** (MCP-side `sync_webhook`) -- verifies the `X-Astro-Signature` HMAC-SHA256 against the configured `webhook_secret` using a timing-safe comparison. It **fails closed**: a request that carries a signature but has no configured secret (or no raw payload to verify, or a mismatch) is rejected. The plugin's dispatcher signs every outbound webhook with the shared secret.
+- **Admin settings** require `manage_options`; the stored webhook secret is rendered as a read-only password field.
+
+### HTML sanitization
+
+- All converted content passes through **DOMPurify** (`isomorphic-dompurify`) before and during the HTML-to-Markdown pipeline. Script tags, event-handler attributes (`onclick`, etc.), and `javascript:` URLs are stripped. Generated output filenames are additionally run through `sanitize-filename` to prevent path traversal.
+
+### Database
+
+- State lives in a local **SQLite** file at `data/wp-astro.db` (gitignored). It holds export job/post state, cached terms/authors, the URL map, shortcode rules, and an audit log -- no plaintext credentials.
+- Opened in **WAL journal mode** with `busy_timeout = 5000` so concurrent processes (a CI run and a cron sync, for example) wait briefly for a writer rather than failing with `SQLITE_BUSY`.
 
 ---
 
