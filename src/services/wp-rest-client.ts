@@ -19,6 +19,7 @@ import {
   AuthenticationError,
   SiteConnectionError,
   RateLimitError,
+  NotFoundError,
 } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 
@@ -107,6 +108,9 @@ class WPRestClient {
           this.getRateLimiter(site).halveRate();
           throw new RateLimitError(site.id, retryAfter || undefined);
         }
+        if (error.response?.status === 404) {
+          throw new NotFoundError('WP resource', error.config?.url || 'unknown');
+        }
         throw error;
       }
     );
@@ -158,10 +162,37 @@ class WPRestClient {
 
         return { data: response.data, pagination };
       } catch (error) {
+        // AuthenticationError and NotFoundError are never retryable.
         if (
           error instanceof AuthenticationError ||
-          error instanceof RateLimitError
+          error instanceof NotFoundError
         ) {
+          throw error;
+        }
+
+        // RateLimitError (HTTP 429) IS retryable. The interceptor has already
+        // halved the rate; here we back off and retry until exhausted.
+        if (error instanceof RateLimitError) {
+          if (attempt < retries - 1) {
+            const retryAfter = (error.details as { retryAfter?: number })
+              ?.retryAfter;
+            // Deterministic jitter (no Math.random): derived from attempt and
+            // endpoint length so concurrent requests stagger slightly.
+            const jitter = ((attempt + 1) * 137 + endpoint.length * 31) % 500;
+            const base =
+              typeof retryAfter === 'number' && retryAfter > 0
+                ? retryAfter * 1000
+                : Math.pow(2, attempt) * 1000;
+            const delay = base + jitter;
+            logger.warn('Rate limited, retrying', {
+              endpoint,
+              attempt: attempt + 1,
+              delay,
+              retryAfter: retryAfter ?? null,
+            });
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            continue;
+          }
           throw error;
         }
 
@@ -380,19 +411,35 @@ class WPRestClient {
     status = 'any'
   ): Promise<number[]> {
     const site = siteManager.getSite(siteId);
+    const perPage = 100;
+    const maxPages = 10000;
     const allIds: number[] = [];
     let page = 1;
-    let totalPages = 1;
 
-    while (page <= totalPages) {
+    while (true) {
       const { data, pagination } = await this.get<Array<{ id: number }>>(
         site,
         `/wp/v2/${restBase}`,
-        { page, per_page: 100, _fields: 'id', status }
+        { page, per_page: perPage, _fields: 'id', status }
       );
       allIds.push(...data.map((p) => p.id));
-      if (pagination) totalPages = pagination.totalPages;
+
+      // When x-wp-total is present, trust totalPages. When absent (proxy
+      // stripped the header), keep paging while pages come back full.
+      const hasMore = pagination
+        ? page < pagination.totalPages
+        : data.length === perPage;
+
+      if (!hasMore) break;
       page++;
+      if (page > maxPages) {
+        logger.warn('fetchAllPostIds hit page cap, stopping', {
+          siteId,
+          restBase,
+          maxPages,
+        });
+        break;
+      }
     }
 
     return allIds;
@@ -445,19 +492,37 @@ class WPRestClient {
    * Fetch all terms for a taxonomy (handles pagination)
    */
   async fetchAllTerms(siteId: string, restBase: string): Promise<WPTerm[]> {
+    const perPage = 100;
+    const maxPages = 10000;
     const allTerms: WPTerm[] = [];
     let page = 1;
-    let totalPages = 1;
 
-    while (page <= totalPages) {
+    while (true) {
       const { terms, pagination } = await this.fetchTerms(
         siteId,
         restBase,
-        page
+        page,
+        perPage
       );
       allTerms.push(...terms);
-      totalPages = pagination.totalPages;
+
+      // fetchTerms synthesizes pagination (totalPages: 1) when x-wp-total is
+      // absent, so a real multi-page run reports totalPages > 1 while a
+      // header-stripped run reports 1. Fall back to page-fullness when the
+      // reported totalPages would stop us prematurely.
+      const hasMore =
+        page < pagination.totalPages || terms.length === perPage;
+
+      if (!hasMore) break;
       page++;
+      if (page > maxPages) {
+        logger.warn('fetchAllTerms hit page cap, stopping', {
+          siteId,
+          restBase,
+          maxPages,
+        });
+        break;
+      }
     }
 
     return allTerms;
@@ -468,19 +533,34 @@ class WPRestClient {
    */
   async fetchAuthors(siteId: string): Promise<WPAuthor[]> {
     const site = siteManager.getSite(siteId);
+    const perPage = 100;
+    const maxPages = 10000;
     const allAuthors: WPAuthor[] = [];
     let page = 1;
-    let totalPages = 1;
 
-    while (page <= totalPages) {
+    while (true) {
       const { data, pagination } = await this.get<WPAuthor[]>(
         site,
         '/wp/v2/users',
-        { page, per_page: 100, context: 'edit' }
+        { page, per_page: perPage, context: 'edit' }
       );
       allAuthors.push(...data);
-      if (pagination) totalPages = pagination.totalPages;
+
+      // When x-wp-total is present, trust totalPages. When absent (proxy
+      // stripped the header), keep paging while pages come back full.
+      const hasMore = pagination
+        ? page < pagination.totalPages
+        : data.length === perPage;
+
+      if (!hasMore) break;
       page++;
+      if (page > maxPages) {
+        logger.warn('fetchAuthors hit page cap, stopping', {
+          siteId,
+          maxPages,
+        });
+        break;
+      }
     }
 
     return allAuthors;

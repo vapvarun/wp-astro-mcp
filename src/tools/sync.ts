@@ -9,7 +9,7 @@ import { siteManager } from '../config/sites.js';
 import { wpClient } from '../services/wp-rest-client.js';
 import { database } from '../config/database.js';
 import { writePost, writePostToJson, removePostFromJson } from '../services/content-writer.js';
-import { formatSuccessResponse, formatErrorResponse, ValidationError } from '../utils/errors.js';
+import { formatSuccessResponse, formatErrorResponse, ValidationError, NotFoundError } from '../utils/errors.js';
 import {
   syncCheckSchema,
   syncPullSchema,
@@ -156,17 +156,17 @@ export const syncTools: Tool[] = [
 // ============================================================
 
 /**
- * Ensure sync tables exist (backward compat for DBs created before sync was added)
+ * Ensure the sync-related schema is present.
+ *
+ * Schema creation and backward-compat column migrations now live in the
+ * DatabaseManager (versioned, gated on PRAGMA user_version). Calling
+ * getDatabase() lazily initializes the schema and runs any pending migrations
+ * exactly once per process, so this just guarantees that has happened.
+ *
+ * Kept as a thin wrapper so existing call sites continue to compile.
  */
 function ensureSyncSchema(): void {
-  const db = database.getDatabase();
-
-  // Add wp_modified_gmt column if missing (for databases created before Phase 7)
-  try {
-    db.exec(`ALTER TABLE export_posts ADD COLUMN wp_modified_gmt TEXT`);
-  } catch (_e: unknown) {
-    // Column already exists — this is expected for new installs
-  }
+  database.getDatabase();
 }
 
 function getLastSyncTime(siteId: string): string | null {
@@ -177,23 +177,24 @@ function getLastSyncTime(siteId: string): string | null {
   return row?.completed_at || null;
 }
 
-function getExportedPostMap(siteId: string): Map<number, { id: number; slug: string; outputPath: string; wpModifiedGmt: string | null; contentHash: string | null; jobId: number }> {
+function getExportedPostMap(siteId: string): Map<number, { id: number; slug: string; postType: string; outputPath: string; wpModifiedGmt: string | null; contentHash: string | null; jobId: number }> {
   const db = database.getDatabase();
   const rows = db.prepare(
-    `SELECT ep.id, ep.wp_post_id, ep.slug, ep.output_path, ep.wp_modified_gmt, ep.content_hash, ep.job_id
+    `SELECT ep.id, ep.wp_post_id, ep.slug, ep.post_type, ep.output_path, ep.wp_modified_gmt, ep.content_hash, ep.job_id
      FROM export_posts ep
      INNER JOIN export_jobs ej ON ep.job_id = ej.id
      WHERE ep.site_id = ? AND ep.status = 'completed' AND ej.status = 'completed'
      ORDER BY ep.id DESC`
-  ).all(siteId) as Array<{ id: number; wp_post_id: number; slug: string; output_path: string; wp_modified_gmt: string | null; content_hash: string | null; job_id: number }>;
+  ).all(siteId) as Array<{ id: number; wp_post_id: number; slug: string; post_type: string; output_path: string; wp_modified_gmt: string | null; content_hash: string | null; job_id: number }>;
 
-  const map = new Map<number, { id: number; slug: string; outputPath: string; wpModifiedGmt: string | null; contentHash: string | null; jobId: number }>();
+  const map = new Map<number, { id: number; slug: string; postType: string; outputPath: string; wpModifiedGmt: string | null; contentHash: string | null; jobId: number }>();
   for (const row of rows) {
     // Only keep the latest entry per wp_post_id
     if (!map.has(row.wp_post_id)) {
       map.set(row.wp_post_id, {
         id: row.id,
         slug: row.slug,
+        postType: row.post_type,
         outputPath: row.output_path,
         wpModifiedGmt: row.wp_modified_gmt,
         contentHash: row.content_hash,
@@ -357,16 +358,35 @@ async function detectChanges(
     for (const wpPostId of missingIds) {
       const local = exportedMap.get(wpPostId)!;
       try {
-        // Try to fetch with any status
-        await wpClient.fetchPost(siteId, wpPostId);
-        // Post exists — just not in our filter criteria, don't delete
-      } catch (_e: unknown) {
-        // 404 — post is truly deleted
-        changes.deletedPosts.push({
-          id: wpPostId,
-          slug: local.slug,
-          outputPath: local.outputPath,
-        });
+        // Fetch with context=edit so drafts/trashed are visible (HTTP 200).
+        const post = await wpClient.fetchPost(siteId, wpPostId);
+        // Trashed posts come back alive — they should be removed locally.
+        // Any other status (publish, draft, pending, etc.) means the post is
+        // still alive; don't delete.
+        if (post.status === 'trash') {
+          changes.deletedPosts.push({
+            id: wpPostId,
+            slug: local.slug,
+            outputPath: local.outputPath,
+          });
+        }
+      } catch (err: unknown) {
+        if (err instanceof NotFoundError) {
+          // True 404 — post is hard-deleted.
+          changes.deletedPosts.push({
+            id: wpPostId,
+            slug: local.slug,
+            outputPath: local.outputPath,
+          });
+        } else {
+          // Transient error (connection, rate limit, auth, 5xx after retries).
+          // Do NOT mark deleted — skip to avoid unlinking live content.
+          logger.warn('Deletion probe failed; skipping to avoid accidental deletion', {
+            siteId,
+            wpPostId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
     }
   }
@@ -442,13 +462,18 @@ async function pullChanges(
   }
 
   // Process updated posts
+  // Build the exported-post map ONCE before the loop. Re-querying inside the loop
+  // re-runs the export_posts ⨝ export_jobs join for every post (O(n²)). The map
+  // reflects DB state at hoist time, which is correct here: the loop updates
+  // distinct post ids, so no entry we read is invalidated by a prior iteration.
+  const existingMap = getExportedPostMap(siteId);
   for (const updated of changes.updatedPosts) {
     try {
       const ptInfo = site.post_types?.find(pt => pt.slug === updated.type);
       const restBase = ptInfo?.rest_base || (updated.type === 'post' ? 'posts' : updated.type === 'page' ? 'pages' : updated.type);
 
       const post = await wpClient.fetchPost(siteId, updated.id, restBase);
-      const existingLocal = getExportedPostMap(siteId).get(updated.id);
+      const existingLocal = existingMap.get(updated.id);
 
       if (!options.dryRun) {
         // Check for slug change — delete old file first
@@ -635,7 +660,7 @@ export const syncHandlers: Record<string, (params: unknown) => Promise<unknown>>
           if (!changes.updatedPosts.find(p => p.id === wpId) && !changes.newPosts.find(p => p.id === wpId)) {
             changes.updatedPosts.push({
               id: wpId,
-              type: 'unknown', // Will be resolved during fetch
+              type: local.postType || 'post', // Use stored post_type so restBase resolves correctly
               modified: '',
               localModified: local.wpModifiedGmt,
               reason: 'force_sync',
@@ -1041,19 +1066,41 @@ export const syncHandlers: Record<string, (params: unknown) => Promise<unknown>>
 
       ensureSyncSchema();
 
-      // Verify HMAC-SHA256 signature if provided
-      if (parsed.signature && parsed.payload_raw) {
-        const webhookSecret = (site as unknown as Record<string, unknown>).webhook_secret as string | undefined;
-        if (webhookSecret) {
-          const expected = crypto
-            .createHmac('sha256', webhookSecret)
-            .update(parsed.payload_raw)
-            .digest('hex');
-          if (parsed.signature !== expected) {
-            return formatErrorResponse(new Error('Invalid webhook signature. Request rejected.'));
-          }
-        } else {
-          logger.warn('Webhook signature provided but no webhook_secret configured for site', { siteId });
+      // Verify HMAC-SHA256 signature.
+      //
+      // Fail-closed policy: if a caller supplies a signature, the request MUST
+      // verify against a configured webhook_secret before we touch any content.
+      // A signature with no secret (or a mismatch) is treated as an attack and
+      // rejected — never logged-and-proceeded.
+      //
+      // The "no signature + no secret" path is intentionally still allowed for
+      // local/trusted invocations (e.g. running sync_webhook by hand against a
+      // dev site that has no bridge plugin secret configured).
+      if (parsed.signature) {
+        const webhookSecret = site.webhook_secret;
+        if (!webhookSecret) {
+          return formatErrorResponse(
+            new Error('Webhook signature supplied but no webhook_secret is configured for this site. Request rejected.')
+          );
+        }
+        if (!parsed.payload_raw) {
+          return formatErrorResponse(
+            new Error('Webhook signature supplied without payload_raw to verify against. Request rejected.')
+          );
+        }
+
+        const expected = crypto
+          .createHmac('sha256', webhookSecret)
+          .update(parsed.payload_raw)
+          .digest('hex');
+
+        const sigBuf = Buffer.from(parsed.signature, 'utf8');
+        const expBuf = Buffer.from(expected, 'utf8');
+        const valid =
+          sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
+
+        if (!valid) {
+          return formatErrorResponse(new Error('Invalid webhook signature. Request rejected.'));
         }
       }
 
@@ -1236,7 +1283,9 @@ jobs:
           npm install -g wp-astro-mcp
 
           # Run sync (uses MCP server in CLI mode)
-          node -e "
+          # --input-type=module so the ESM import + top-level await below work
+          # under "node -e" (plain "node -e" runs in CommonJS/script mode).
+          node --input-type=module -e "
             import { syncHandlers } from 'wp-astro-mcp/dist/tools/sync.js';
             const result = await syncHandlers.sync_full({
               site_id: '${siteId}',
@@ -1285,7 +1334,9 @@ cd "\$SITE_DIR"
 git pull origin main --rebase
 
 # Run sync via Node.js
-node -e "
+# --input-type=module so the ESM import + top-level await below work under
+# "node -e" (plain "node -e" runs in CommonJS/script mode and would fail).
+node --input-type=module -e "
   import { syncHandlers } from 'wp-astro-mcp/dist/tools/sync.js';
   const result = await syncHandlers.sync_full({
     include_deleted: true,

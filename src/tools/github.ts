@@ -195,10 +195,11 @@ export const githubHandlers: Record<string, (params: unknown) => Promise<unknown
         await git.removeRemote('origin');
       }
 
-      // Use token in URL for auth
-      const token = siteManager.getGitHubToken();
-      const authUrl = repoUrl.replace('https://', `https://${token}@`);
-      await git.addRemote('origin', authUrl);
+      // Add the remote with a token-free URL. The PAT is never written to
+      // .git/config; authentication is supplied per-push via a process-scoped
+      // HTTP header (see github_push). This avoids persisting the credential
+      // at rest, where it could be read or accidentally committed.
+      await git.addRemote('origin', repoUrl);
 
       // Save repo info
       siteManager.updateSite(siteId, {
@@ -211,7 +212,7 @@ export const githubHandlers: Record<string, (params: unknown) => Promise<unknown
         message: `Repository created: ${fullName}`,
         site_id: siteId,
         repo: fullName,
-        url: repoUrl.replace(token || '', '***'),
+        url: repoUrl,
         private: isPrivate,
         next_steps: [
           'Run github_push to push code to GitHub',
@@ -282,7 +283,19 @@ export const githubHandlers: Record<string, (params: unknown) => Promise<unknown
         throw new ValidationError('No remote origin configured. Run github_create_repo first.');
       }
 
-      await git.push('origin', branch, ['--set-upstream']);
+      // Authenticate with a process-scoped HTTP header instead of embedding the
+      // PAT in the remote URL. The `-c http.extraHeader=...` config applies only
+      // to this single git invocation and is NEVER written to .git/config, so the
+      // token is never persisted at rest. GitHub accepts a PAT as the HTTP Basic
+      // password; the username can be anything (we use "x-access-token").
+      const token = siteManager.getGitHubToken();
+      if (!token) {
+        throw new ValidationError('GitHub token not configured. Set github_token in config/sites.json.');
+      }
+      const basicAuth = Buffer.from(`x-access-token:${token}`).toString('base64');
+      const extraHeader = `http.extraHeader=Authorization: Basic ${basicAuth}`;
+
+      await git.raw(['-c', extraHeader, 'push', '--set-upstream', 'origin', branch]);
 
       database.audit(siteId, 'github_push', { branch });
 

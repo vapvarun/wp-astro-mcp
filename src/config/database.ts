@@ -38,8 +38,12 @@ class DatabaseManager {
     this.db = new Database(this.dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
+    // Wait up to 5s for a competing writer (concurrent cron/CI processes)
+    // instead of throwing SQLITE_BUSY immediately.
+    this.db.pragma('busy_timeout = 5000');
 
     this.initializeSchema();
+    this.runMigrations();
     logger.info('Database initialized', { path: this.dbPath });
 
     return this.db;
@@ -204,6 +208,51 @@ class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_sync_history_site
         ON sync_history(site_id, started_at);
     `);
+  }
+
+  /**
+   * Apply pending schema migrations, version-gated on PRAGMA user_version.
+   *
+   * The base CREATE TABLE statements above already include every column the
+   * current code expects (e.g. wp_modified_gmt, content_hash, issues), so on a
+   * fresh install each migration is a guarded no-op. The migrations exist to
+   * upgrade databases created by older builds whose base schema lacked them.
+   *
+   * Idempotent: re-running never throws. Each step is gated by user_version
+   * and additionally guarded with PRAGMA table_info so a partially-migrated DB
+   * can be re-applied safely.
+   */
+  private runMigrations(): void {
+    const db = this.db!;
+
+    const columnExists = (table: string, column: string): boolean => {
+      const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+      return cols.some((c) => c.name === column);
+    };
+
+    // Ordered list of migrations. Index + 1 is the target user_version.
+    const migrations: Array<() => void> = [
+      // Migration 1: ensure export_posts.wp_modified_gmt exists (added in Phase 7).
+      () => {
+        if (!columnExists('export_posts', 'wp_modified_gmt')) {
+          db.exec('ALTER TABLE export_posts ADD COLUMN wp_modified_gmt TEXT');
+        }
+      },
+    ];
+
+    let version = (db.pragma('user_version', { simple: true }) as number) || 0;
+
+    for (let i = version; i < migrations.length; i++) {
+      const apply = migrations[i];
+      const target = i + 1;
+      const run = db.transaction(() => {
+        apply();
+        db.pragma(`user_version = ${target}`);
+      });
+      run();
+      logger.info('Applied database migration', { version: target });
+      version = target;
+    }
   }
 
   /**

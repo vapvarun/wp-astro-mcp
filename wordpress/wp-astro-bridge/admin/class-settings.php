@@ -110,12 +110,16 @@ class WP_Astro_Bridge_Settings {
 	}
 
 	/**
-	 * Render the "webhook_secret" readonly text field.
+	 * Render the "webhook_secret" readonly password field.
+	 *
+	 * Rendered as type="password" rather than type="text". The value is in the
+	 * DOM either way, but password type avoids shoulder-surfing and keeps the
+	 * plaintext secret out of browser form-field caching/autofill.
 	 */
 	public function field_webhook_secret() {
 		$options = get_option( $this->option_name, array() );
 		$value   = $options['webhook_secret'] ?? '';
-		echo '<input type="text" name="' . esc_attr( $this->option_name ) . '[webhook_secret]" value="' . esc_attr( $value ) . '" class="regular-text" readonly />';
+		echo '<input type="password" name="' . esc_attr( $this->option_name ) . '[webhook_secret]" value="' . esc_attr( $value ) . '" class="regular-text" readonly autocomplete="off" />';
 		echo '<p class="description">Auto-generated. Used to sign webhook payloads (HMAC-SHA256). Share with your MCP server config.</p>';
 	}
 

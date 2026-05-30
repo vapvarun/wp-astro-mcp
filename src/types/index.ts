@@ -15,6 +15,10 @@ export interface SiteConfig {
   default?: boolean;
   is_active?: boolean;
 
+  // Webhook (wp-astro-bridge) — used by sync_webhook for HMAC verification
+  webhook_url?: string;
+  webhook_secret?: string;
+
   // Auto-detected on connect
   wp_version?: string;
   rest_api_url?: string;

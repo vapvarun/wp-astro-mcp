@@ -48,13 +48,18 @@ class WP_Astro_Bridge_REST {
 		) );
 
 		// Token verification endpoint.
+		//
+		// Accepts both GET (query param — required by the generated Astro
+		// /preview page, which fetches with ?token=...&post_id=...) and POST
+		// (body / X-Astro-Preview-Token header) so newer clients can keep the
+		// token out of URLs, history, referrers, and CDN/proxy logs.
 		register_rest_route( 'astro-bridge/v1', '/verify-token', array(
-			'methods'             => 'GET',
+			'methods'             => array( 'GET', 'POST' ),
 			'callback'            => array( $this, 'verify_token' ),
 			'permission_callback' => '__return_true',
 			'args'                => array(
 				'token'   => array(
-					'required'          => true,
+					'required'          => false,
 					'type'              => 'string',
 					'sanitize_callback' => 'sanitize_text_field',
 				),
@@ -73,20 +78,30 @@ class WP_Astro_Bridge_REST {
 	 * @return WP_REST_Response
 	 */
 	public function health_check() {
-		$last_webhook = get_option( 'wp_astro_bridge_last_webhook', null );
+		// Minimal, unauthenticated payload — just enough for the MCP server to
+		// detect that the bridge plugin is installed and which version. Stack
+		// fingerprinting fields (wp_version, php_version) and internal/editorial
+		// data (last_webhook timing, configured URLs) are gated behind an
+		// authenticated manage_options check below.
+		$response = array(
+			'status'         => 'ok',
+			'plugin_version' => WP_ASTRO_BRIDGE_VERSION,
+		);
 
-		return rest_ensure_response( array(
-			'status'          => 'ok',
-			'plugin_version'  => WP_ASTRO_BRIDGE_VERSION,
-			'wp_version'      => get_bloginfo( 'version' ),
-			'php_version'     => phpversion(),
-			'astro_url'       => $this->options['astro_url'] ?? '',
-			'webhook_url'     => ! empty( $this->options['webhook_url'] ) ? '***configured***' : '',
-			'webhook_enabled' => ! empty( $this->options['webhook_url'] ),
-			'preview_enabled' => ! empty( $this->options['astro_url'] ),
-			'last_webhook'    => $last_webhook,
-			'timestamp'       => current_time( 'c' ),
-		) );
+		// Verbose diagnostics only for administrators (e.g. a logged-in admin
+		// hitting the endpoint from wp-admin). Anonymous callers never see these.
+		if ( current_user_can( 'manage_options' ) ) {
+			$response['wp_version']      = get_bloginfo( 'version' );
+			$response['php_version']     = phpversion();
+			$response['astro_url']       = $this->options['astro_url'] ?? '';
+			$response['webhook_url']     = ! empty( $this->options['webhook_url'] ) ? '***configured***' : '';
+			$response['webhook_enabled'] = ! empty( $this->options['webhook_url'] );
+			$response['preview_enabled'] = ! empty( $this->options['astro_url'] );
+			$response['last_webhook']    = get_option( 'wp_astro_bridge_last_webhook', null );
+			$response['timestamp']       = current_time( 'c' );
+		}
+
+		return rest_ensure_response( $response );
 	}
 
 	/**
@@ -96,8 +111,20 @@ class WP_Astro_Bridge_REST {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function verify_token( $request ) {
-		$token   = $request->get_param( 'token' );
 		$post_id = (int) $request->get_param( 'post_id' );
+
+		// Prefer the token from a request header or POST body (keeps it out of
+		// URLs, browser history, referrer headers, and proxy/CDN logs), but
+		// still accept the query param for the generated Astro /preview flow.
+		$token = $request->get_header( 'x_astro_preview_token' );
+		if ( empty( $token ) ) {
+			$token = $request->get_param( 'token' );
+		}
+		$token = sanitize_text_field( (string) $token );
+
+		if ( empty( $token ) ) {
+			return new WP_Error( 'invalid_token', 'Missing preview token.', array( 'status' => 403 ) );
+		}
 
 		$result = WP_Astro_Bridge_Preview::verify_token( $token, $post_id );
 
@@ -105,7 +132,17 @@ class WP_Astro_Bridge_REST {
 			return $result;
 		}
 
-		// Token valid — fetch post data (including drafts).
+		// Defense-in-depth: a valid signature is NOT authorization. Re-check
+		// that the user embedded in the token can still edit THIS specific post
+		// right now (capabilities, post ownership, and trashed status may all
+		// have changed since the token was minted). Without this, a valid HMAC
+		// for any post would disclose its draft/private/trashed content.
+		$token_user_id = isset( $result['user_id'] ) ? (int) $result['user_id'] : 0;
+		if ( $token_user_id <= 0 || ! user_can( $token_user_id, 'edit_post', $post_id ) ) {
+			return new WP_Error( 'forbidden', 'Not allowed to preview this post.', array( 'status' => 403 ) );
+		}
+
+		// Token valid and authorized — fetch post data (including drafts).
 		$post = get_post( $post_id );
 		if ( ! $post ) {
 			return new WP_Error( 'not_found', 'Post not found.', array( 'status' => 404 ) );

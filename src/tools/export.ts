@@ -265,6 +265,13 @@ export const exportHandlers: Record<string, (params: unknown) => Promise<unknown
       // Process first batch
       const batchResult = await processNextBatch(jobId, siteId, site, outputDir, batchSize);
 
+      // Only mark the job completed when zero non-terminal rows remain
+      // (remaining counts pending + in_progress). If a single batch drained
+      // everything, persist 'completed' so the DB matches the reported status.
+      if (batchResult.remaining === 0) {
+        db.prepare("UPDATE export_jobs SET status = 'completed', completed_at = datetime('now') WHERE id = ?").run(jobId);
+      }
+
       database.audit(siteId, 'export_start', { job_id: jobId, total: totalPosts, first_batch: batchResult.processed });
 
       return formatSuccessResponse({
@@ -564,6 +571,19 @@ async function processNextBatch(
 }> {
   const db = database.getDatabase();
 
+  // Reclaim orphaned in_progress rows from a prior crashed run.
+  // Single-process model: any row left in_progress at the start of a batch
+  // run was abandoned (crash between file write and the mark-complete UPDATE),
+  // so reset it to pending so this run picks it up. Without this, the resume
+  // query below (status='pending' only) would never reclaim it and the job
+  // could falsely report completed while those posts were never finished.
+  const reclaimed = db.prepare(
+    "UPDATE export_posts SET status = 'pending', updated_at = datetime('now') WHERE job_id = ? AND status = 'in_progress'"
+  ).run(jobId);
+  if (reclaimed.changes > 0) {
+    logger.warn('Reclaimed orphaned in_progress posts from prior run', { jobId, reclaimed: reclaimed.changes });
+  }
+
   // Get next batch of pending posts
   const pendingPosts = db.prepare(
     `SELECT id, wp_post_id, post_type FROM export_posts
@@ -599,36 +619,40 @@ async function processNextBatch(
         .update(post.modified_gmt || '')
         .digest('hex');
 
-      // Update state (including wp_modified_gmt for sync tracking)
-      db.prepare(
-        `UPDATE export_posts SET
-          status = 'completed',
-          slug = ?,
-          title = ?,
-          output_path = ?,
-          input_size = ?,
-          output_size = ?,
-          conversion_ms = ?,
-          content_hash = ?,
-          wp_modified_gmt = ?,
-          issues = ?,
-          updated_at = datetime('now')
-        WHERE id = ?`
-      ).run(
-        result.slug,
-        result.title,
-        result.outputPath,
-        result.inputSize,
-        result.outputSize,
-        result.conversionMs,
-        contentHash,
-        post.modified_gmt || null,
-        // TODO: WriteResult only exposes issueCount, not the actual issues array.
-        // This stores '[]' as a placeholder when issues exist. To fix, extend WriteResult
-        // to include the issues array from the transform pipeline.
-        result.issueCount > 0 ? '[]' : null,
-        row.id
-      );
+      // Update state (including wp_modified_gmt for sync tracking).
+      // Wrap the mark-complete in a transaction so the row reaches 'completed'
+      // as one atomic unit — it can never be left half-updated. The network
+      // fetch and disk write above are intentionally outside the transaction
+      // (better-sqlite3 transactions are synchronous and cannot await I/O).
+      const markComplete = db.transaction(() => {
+        db.prepare(
+          `UPDATE export_posts SET
+            status = 'completed',
+            slug = ?,
+            title = ?,
+            output_path = ?,
+            input_size = ?,
+            output_size = ?,
+            conversion_ms = ?,
+            content_hash = ?,
+            wp_modified_gmt = ?,
+            issues = ?,
+            updated_at = datetime('now')
+          WHERE id = ?`
+        ).run(
+          result.slug,
+          result.title,
+          result.outputPath,
+          result.inputSize,
+          result.outputSize,
+          result.conversionMs,
+          contentHash,
+          post.modified_gmt || null,
+          result.issues.length > 0 ? JSON.stringify(result.issues) : null,
+          row.id
+        );
+      });
+      markComplete();
 
       succeeded++;
     } catch (error) {
@@ -650,9 +674,12 @@ async function processNextBatch(
     WHERE id = ?`
   ).run(jobId, jobId, jobId);
 
-  // Count remaining
+  // Count remaining: any non-terminal row (pending OR in_progress). Counting
+  // only 'pending' here would let the job flip to 'completed' while orphaned
+  // in_progress rows still exist — a silent partial export reported as success.
+  // (failed is terminal and surfaced separately via posts_failed.)
   const remaining = (db.prepare(
-    "SELECT COUNT(*) as count FROM export_posts WHERE job_id = ? AND status = 'pending'"
+    "SELECT COUNT(*) as count FROM export_posts WHERE job_id = ? AND status IN ('pending', 'in_progress')"
   ).get(jobId) as { count: number }).count;
 
   return { processed: pendingPosts.length, succeeded, failed, remaining };

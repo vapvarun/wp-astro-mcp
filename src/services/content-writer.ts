@@ -7,7 +7,7 @@
 import fs from 'fs';
 import path from 'path';
 import sanitize from 'sanitize-filename';
-import type { WPPost, SiteConfig } from '../types/index.js';
+import type { WPPost, SiteConfig, ConversionIssue } from '../types/index.js';
 import { convertPost } from './html-to-markdown.js';
 import { serializeFrontmatter } from './frontmatter-builder.js';
 import { getCollectionDirForType } from './astro-scaffolder.js';
@@ -24,6 +24,8 @@ export interface WriteResult {
   outputSize: number;
   conversionMs: number;
   issueCount: number;
+  /** Real per-post conversion issues from the transform pipeline. issueCount === issues.length. */
+  issues: ConversionIssue[];
   written: boolean;
 }
 
@@ -58,7 +60,24 @@ export function writePost(
     relDir = path.join(relDir, year, month);
   }
 
-  const safeSlug = sanitize(post.slug || `post-${post.id}`).toLowerCase();
+  const baseSlug = sanitize(post.slug || `post-${post.id}`).toLowerCase();
+
+  // Resolve a collision-safe slug. Two different posts whose slugs sanitize +
+  // lowercase to the same string (e.g. `Foo` vs `foo`, accented variants, or two
+  // CPTs mapped to the same collection dir) would otherwise overwrite each
+  // other's file — and clobber each other's URL mapping. We check the target
+  // path: if a file already exists there and belongs to a DIFFERENT wpPostId
+  // (or its owner can't be confirmed), the current post is the colliding
+  // newcomer and gets a deterministic `-{id}` suffix. The post that owns the
+  // clean slug keeps it; re-exporting the same post stays stable/idempotent.
+  const baseFileName = `${baseSlug}.${format}`;
+  const baseFullPath = path.join(outputDir, relDir, baseFileName);
+
+  let safeSlug = baseSlug;
+  if (!options.dryRun && isSlugTakenByDifferentPost(baseFullPath, post.id)) {
+    safeSlug = `${baseSlug}-${post.id}`;
+  }
+
   const fileName = `${safeSlug}.${format}`;
   const relPath = path.join(relDir, fileName);
   const fullPath = path.join(outputDir, relPath);
@@ -71,7 +90,8 @@ export function writePost(
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(fullPath, fullContent, 'utf-8');
 
-    // Register URL mapping for link rewriting
+    // Register URL mapping for link rewriting — keyed off the disambiguated
+    // slug so the file path and the registered Astro/URL path stay consistent.
     const wpPath = new URL(post.link).pathname;
     const astroPath = `/${collectionDir}/${safeSlug}`;
     registerUrlMapping(site.id, wpPath, astroPath, post.type, post.id);
@@ -86,6 +106,7 @@ export function writePost(
     outputSize: result.outputSize,
     conversionMs: result.conversionMs,
     issueCount: result.issues.length,
+    issues: result.issues,
     written: !options.dryRun,
   };
 }
@@ -134,6 +155,11 @@ export function writeBatch(
         outputSize: 0,
         conversionMs: 0,
         issueCount: 1,
+        issues: [{
+          severity: 'error',
+          code: 'WRITE_FAILED',
+          message: error instanceof Error ? error.message : String(error),
+        }],
         written: false,
       });
     }
@@ -334,6 +360,67 @@ export interface JsonPostEntry {
   taxonomies?: Record<string, Array<{ name: string; slug: string }>>;
 }
 
+// Module-level counter to guarantee unique temp/backup filenames even within
+// the same millisecond / same process.
+let atomicWriteCounter = 0;
+
+/**
+ * Atomically write `data` to `filePath`.
+ *
+ * Writes to a sibling temp file first, then renames it over the target. Rename
+ * is atomic on the same filesystem, so any concurrent reader sees either the
+ * old complete file or the new complete file — never a half-written truncation.
+ */
+function writeFileAtomic(filePath: string, data: string): void {
+  const tmpPath = `${filePath}.tmp-${process.pid}-${atomicWriteCounter++}`;
+  try {
+    fs.writeFileSync(tmpPath, data, 'utf-8');
+    fs.renameSync(tmpPath, filePath);
+  } catch (e: unknown) {
+    // Best-effort cleanup of the temp file if the rename failed.
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch {
+      /* ignore cleanup failure */
+    }
+    throw e;
+  }
+}
+
+/**
+ * Read and parse an existing JSON collection file.
+ *
+ * On a parse failure we never silently discard the data: the corrupt file is
+ * renamed to a `.corrupt-<ts>` sibling so the original bytes are preserved, and
+ * an empty array is returned so the caller can proceed without overwriting the
+ * live collection with `[]`.
+ */
+function readJsonCollection(jsonPath: string): JsonPostEntry[] {
+  if (!fs.existsSync(jsonPath)) return [];
+  const raw = fs.readFileSync(jsonPath, 'utf-8');
+  try {
+    return JSON.parse(raw) as JsonPostEntry[];
+  } catch (e: unknown) {
+    const backupPath = `${jsonPath}.corrupt-${Date.now()}-${process.pid}-${atomicWriteCounter++}`;
+    try {
+      fs.renameSync(jsonPath, backupPath);
+      logger.error(
+        `Failed to parse JSON collection ${jsonPath}; backed up corrupt file to ${backupPath} to avoid data loss`,
+        e instanceof Error ? e : undefined
+      );
+    } catch (backupErr: unknown) {
+      // If even the backup rename fails, do NOT proceed — re-throw so the
+      // caller aborts rather than overwriting the live file with an empty array.
+      logger.error(
+        `Failed to parse JSON collection ${jsonPath} and could not back it up; aborting to avoid data loss`,
+        backupErr instanceof Error ? backupErr : undefined
+      );
+      throw e;
+    }
+    return [];
+  }
+}
+
 /**
  * Write or update a JSON collection file for a post type.
  * Reads existing file, upserts the post entry, writes back.
@@ -379,15 +466,9 @@ export function writePostToJson(
   if (!options.dryRun) {
     fs.mkdirSync(jsonDir, { recursive: true });
 
-    // Read existing JSON array, upsert this post
-    let posts: JsonPostEntry[] = [];
-    if (fs.existsSync(jsonPath)) {
-      try {
-        posts = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
-      } catch (_e: unknown) {
-        posts = [];
-      }
-    }
+    // Read existing JSON array (a parse failure backs up the corrupt file and
+    // returns [] rather than silently destroying the live collection).
+    const posts: JsonPostEntry[] = readJsonCollection(jsonPath);
 
     // Replace existing entry or append
     const existingIdx = posts.findIndex(p => p.wpPostId === post.id);
@@ -400,7 +481,7 @@ export function writePostToJson(
     // Sort by date descending
     posts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    fs.writeFileSync(jsonPath, JSON.stringify(posts, null, 2), 'utf-8');
+    writeFileAtomic(jsonPath, JSON.stringify(posts, null, 2));
 
     // Register URL mapping
     const safeSlug = sanitize(post.slug || `post-${post.id}`).toLowerCase();
@@ -420,6 +501,7 @@ export function writePostToJson(
     outputSize: JSON.stringify(entry).length,
     conversionMs: result.conversionMs,
     issueCount: result.issues.length,
+    issues: result.issues,
     written: !options.dryRun,
   };
 }
@@ -438,17 +520,102 @@ export function removePostFromJson(
 
   if (!fs.existsSync(jsonPath)) return false;
 
+  // On parse failure readJsonCollection backs up the corrupt file and returns
+  // []; we must NOT overwrite the live file with [] in that case, so bail out.
+  let posts: JsonPostEntry[];
   try {
-    const posts: JsonPostEntry[] = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+    posts = readJsonCollection(jsonPath);
+  } catch {
+    return false;
+  }
+
+  // The file existed but could not be parsed: it has already been moved to a
+  // `.corrupt-*` backup, so there is nothing left to filter. Do not write [].
+  if (!fs.existsSync(jsonPath)) return false;
+
+  try {
     const filtered = posts.filter(p => p.wpPostId !== wpPostId);
 
     if (filtered.length === posts.length) return false; // Not found
 
-    fs.writeFileSync(jsonPath, JSON.stringify(filtered, null, 2), 'utf-8');
+    writeFileAtomic(jsonPath, JSON.stringify(filtered, null, 2));
     return true;
   } catch (_e: unknown) {
     return false;
   }
+}
+
+/**
+ * Decide whether the Markdown file at `targetPath` is already owned by a
+ * DIFFERENT WordPress post than `currentPostId`.
+ *
+ * Used to detect the slug-collision case in `writePost`, where two distinct
+ * posts sanitize + lowercase to the same filename and would silently overwrite
+ * each other. We read the existing file's frontmatter `wpPostId:` line:
+ *
+ *  - No file at the path      → not taken (false): the current post may write it.
+ *  - File owned by same id     → not taken (false): a normal update/overwrite.
+ *  - File owned by a different
+ *    id, OR owner unconfirmable
+ *    (unreadable / no `wpPostId`
+ *    in the frontmatter)       → taken (true): caller must disambiguate. We treat
+ *                                the unconfirmable case as a collision rather than
+ *                                silently overwriting a file we don't own.
+ *
+ * The check is self-contained (no DB), reads only the first ~40 lines, and is
+ * deterministic so re-running an export yields the same decision.
+ */
+function isSlugTakenByDifferentPost(targetPath: string, currentPostId: number): boolean {
+  let existing: number | null;
+  try {
+    if (!fs.existsSync(targetPath)) return false;
+    existing = readWpPostIdFromFile(targetPath);
+  } catch {
+    // Cannot even stat/read the path: be safe and treat as a collision so we
+    // never clobber a file whose owner we can't confirm.
+    return true;
+  }
+
+  // Owner could not be confirmed from the frontmatter → treat as collision.
+  if (existing === null) return true;
+
+  // Same post → normal overwrite (not a collision). Different post → collision.
+  return existing !== currentPostId;
+}
+
+/**
+ * Parse the frontmatter `wpPostId:` value from the first lines of a Markdown
+ * file. Returns the numeric id, or null if it can't be confirmed (unreadable
+ * file, no frontmatter, or no/!numeric `wpPostId`). Reads at most ~40 lines so
+ * it stays cheap even on large files.
+ */
+function readWpPostIdFromFile(filePath: string): number | null {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    return null;
+  }
+
+  const lines = raw.split('\n', 41);
+
+  // A valid frontmatter block opens with `---` on the first line; if it doesn't,
+  // we can't trust the file's ownership, so report "unconfirmed".
+  if (lines.length === 0 || lines[0].trim() !== '---') return null;
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    // Closing fence ends the frontmatter block — stop before scanning the body.
+    if (line.trim() === '---') break;
+    // Top-level `wpPostId:` is emitted at indent 0 by serializeFrontmatter.
+    const match = /^wpPostId:\s*(-?\d+)\s*$/.exec(line);
+    if (match) {
+      const id = Number(match[1]);
+      return Number.isFinite(id) ? id : null;
+    }
+  }
+
+  return null;
 }
 
 function isHierarchical(post: WPPost): boolean {
