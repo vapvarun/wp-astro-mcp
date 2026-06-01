@@ -2,6 +2,31 @@
 
 All notable changes to WP Astro MCP are documented here.
 
+## [3.1.0] - 2026-05-30
+
+Security audit and remediation (Tier 1 + Tier 2), a test suite with CI, and a more discoverable tool surface. See `docs/AUDIT-2026-05-30.md` for the full audit.
+
+### Added
+- **Content styling for scaffolded sites** — scaffolder now generates `src/styles/global.css` with a `.content` typography baseline, a WordPress block-compatibility layer (alignwide/full, captions, columns, galleries, buttons), media rules, and a ≤640px responsive layer, imported globally from `BaseLayout`. On the Tailwind (starwind) path it wires `@tailwindcss/typography` + `@tailwindcss/vite` and applies `prose prose-slate max-w-none`; the baseline backs off via `.content:not(.prose)`. Non-Tailwind projects ship pure CSS with no build step.
+- **Hybrid tool surface** — tool categories, promoted actions, and read-only/destructive annotations (`src/tools/metadata.ts`) for better discoverability via `wp_astro_run`/`help`/`describe`.
+- **Test suite** — 99 tests (Vitest) covering content-writer, errors, frontmatter-builder, html-to-markdown, metadata, shortcode-resolver, sync deletion, and the WP REST client.
+- **GitHub Actions CI** — `.github/workflows/ci.yml` runs typecheck, build, and tests.
+- **Security & Trust Model** documented in `README.md` (credentials at rest, SSRF surface, GitHub token handling, bridge plugin auth, sanitization, SQLite).
+- `typecheck` and `prepublishOnly` npm scripts.
+
+### Fixed
+- **Data-loss / sync integrity (Tier 1):** deletion detection no longer treats any fetch error as "deleted" — `get()` throws a distinct `NotFoundError` on 404 and the probe only deletes on a confirmed `NotFoundError`; trashed posts (`status === 'trash'`) are now detected; crash-orphaned `in_progress` export rows are reclaimed before each batch with transactional mark-complete; JSON-mode writes are atomic (temp-file + rename) and back up unparseable files to `.corrupt-*` instead of overwriting; force re-sync now carries `post_type` for non-default types.
+- **Auth (Tier 1):** WP bridge `/verify-token` enforces `edit_post` after the signature check and hardens the token with a single-use 5-minute server-side nonce transient (accepted via header/POST to stay out of URLs).
+- **Reliability (Tier 2):** 429 responses are retried (honoring `Retry-After`, else backoff + jitter) instead of aborting; pagination falls back to "page until short page" with a 10k-page cap when `x-wp-total` is absent; `export_validate` now reports real conversion-issue counts.
+- **Webhook security (Tier 2):** signature verification fails closed — signature-present-but-no-secret and mismatches are rejected with a timing-safe compare; `webhook_secret`/`webhook_url` added to `SiteConfig`.
+- **GitHub token at rest (Tier 2):** PAT is no longer written to `.git/config`; auth is supplied per-push via a process-scoped `-c http.extraHeader`.
+- **SQLite:** added `busy_timeout = 5000` and versioned migrations gated on `PRAGMA user_version` (replacing blind `ALTER TABLE`).
+- **WP bridge `/health`:** trimmed public response to `{status, plugin_version}`; verbose fields gated behind `manage_options`; webhook secret rendered as a password field.
+- Internal-link rewriting ran after Turndown and was a no-op — now applied at the correct pipeline stage.
+
+### Changed
+- Upgraded `@modelcontextprotocol/sdk` to `^1.27.1` and `axios` to `^1.16.1` (resolves SSRF/prototype-pollution advisories).
+
 ## [3.0.0] - 2026-04-02
 
 ### Added

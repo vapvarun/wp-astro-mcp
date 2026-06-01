@@ -236,7 +236,7 @@ extract_post      -> View raw WordPress data for debugging
 ### Phase 4: Scaffold and Generate Content Layer
 
 ```
-scaffold_project  -> Create Astro project (config, layouts, pages, collections, RSS)
+scaffold_project  -> Create Astro project (config, layouts, pages, collections, RSS, content styling)
 export_plan       -> Pre-flight check: content counts, config validation, time estimate
 export_start      -> Begin batch content generation (processes first batch, creates SQLite job)
 export_resume     -> Continue processing (call repeatedly until done)
@@ -335,7 +335,7 @@ sync_schedule     -> wordpress-plugin option generates setup instructions
 
 | Tool | Description |
 |------|-------------|
-| `scaffold_project` | Create complete Astro 6 project: package.json, astro.config (hybrid mode), layouts, content collections, paginated blog, search (Pagefind), related posts, JSON Feed, RSS, 404 page, reading progress bar, preview route, webhook endpoint, deploy config. |
+| `scaffold_project` | Create complete Astro 6 project: package.json, astro.config (hybrid mode), layouts, content collections, paginated blog, search (Pagefind), related posts, JSON Feed, RSS, 404 page, reading progress bar, preview route, webhook endpoint, deploy config, and content styling. Generates a `global.css` typography baseline with a WordPress block-compatibility layer (alignwide/full, captions, columns, galleries) and a responsive layer; on the Tailwind path it wires `@tailwindcss/typography` (`prose`) instead. |
 | `write_post` | Convert and write a single post as Markdown to the content directory. Supports dry_run. |
 | `write_batch` | Convert and write a page of posts. Use with pagination for incremental writing. |
 | `generate_redirects` | Generate redirect rules from WordPress->Astro URL map. Supports Netlify, Vercel, Cloudflare, Apache, Nginx. |
