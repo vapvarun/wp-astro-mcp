@@ -27,6 +27,42 @@ import { resolveShortcodes } from './shortcode-resolver.js';
 import { rewriteContentLinks } from './link-rewriter.js';
 import { buildFrontmatter, serializeFrontmatter } from './frontmatter-builder.js';
 
+/**
+ * Sanitize raw WordPress HTML against a fixed allowlist.
+ *
+ * Single source of truth shared by both output paths: the Markdown pipeline
+ * (Step 1 below) and JSON mode (`writePostToJson`), which stores rendered HTML
+ * verbatim and injects it client-side via `set:html`. Both must strip scripts,
+ * event handlers, and other XSS vectors before the content reaches a browser.
+ */
+export function sanitizeWpHtml(html: string): string {
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: [
+      'p', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+      'strong', 'b', 'em', 'i', 'u', 's', 'del', 'ins', 'mark', 'sub', 'sup',
+      'a', 'img', 'figure', 'figcaption', 'picture', 'source', 'video', 'audio',
+      'ul', 'ol', 'li', 'dl', 'dt', 'dd',
+      'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
+      'blockquote', 'pre', 'code', 'kbd', 'samp', 'var',
+      'div', 'span', 'section', 'article', 'aside', 'header', 'footer', 'nav', 'main',
+      'details', 'summary',
+      'iframe',
+      'abbr', 'cite', 'q', 'time', 'address',
+    ],
+    ALLOWED_ATTR: [
+      'href', 'src', 'alt', 'title', 'class', 'id', 'width', 'height',
+      'target', 'rel', 'type', 'start', 'reversed',
+      'colspan', 'rowspan', 'scope', 'headers',
+      'loading', 'decoding', 'srcset', 'sizes',
+      'controls', 'autoplay', 'loop', 'muted', 'poster', 'preload',
+      'datetime', 'data-src', 'data-srcset',
+      'allow', 'allowfullscreen', 'frameborder',
+      'open',
+    ],
+    ALLOW_DATA_ATTR: false,
+  });
+}
+
 // Helper to safely get attribute from a Turndown node
 function getAttr(node: TurndownService.Node, attr: string): string {
   if (node && typeof (node as unknown as Record<string, unknown>).getAttribute === 'function') {
@@ -311,31 +347,7 @@ export function convertPost(
   let html = rawHtml;
 
   // Step 1: Sanitize HTML
-  html = DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: [
-      'p', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-      'strong', 'b', 'em', 'i', 'u', 's', 'del', 'ins', 'mark', 'sub', 'sup',
-      'a', 'img', 'figure', 'figcaption', 'picture', 'source', 'video', 'audio',
-      'ul', 'ol', 'li', 'dl', 'dt', 'dd',
-      'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
-      'blockquote', 'pre', 'code', 'kbd', 'samp', 'var',
-      'div', 'span', 'section', 'article', 'aside', 'header', 'footer', 'nav', 'main',
-      'details', 'summary',
-      'iframe',
-      'abbr', 'cite', 'q', 'time', 'address',
-    ],
-    ALLOWED_ATTR: [
-      'href', 'src', 'alt', 'title', 'class', 'id', 'width', 'height',
-      'target', 'rel', 'type', 'start', 'reversed',
-      'colspan', 'rowspan', 'scope', 'headers',
-      'loading', 'decoding', 'srcset', 'sizes',
-      'controls', 'autoplay', 'loop', 'muted', 'poster', 'preload',
-      'datetime', 'data-src', 'data-srcset',
-      'allow', 'allowfullscreen', 'frameborder',
-      'open',
-    ],
-    ALLOW_DATA_ATTR: false,
-  });
+  html = sanitizeWpHtml(html);
 
   // Step 2: Resolve shortcodes
   const shortcodeResult = resolveShortcodes(html, site.id);

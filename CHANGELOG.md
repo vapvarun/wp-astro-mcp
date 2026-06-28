@@ -2,6 +2,25 @@
 
 All notable changes to WP Astro MCP are documented here.
 
+## [3.1.1] - 2026-06-28
+
+Astro 6 scaffold-currency fixes. The generated projects targeted Astro 6 but emitted config that Astro 5+ rejects, so every scaffold with a deploy adapter failed `astro build`. This release makes the generated output actually build, closes an XSS gap in JSON mode, and adds scaffold-output tests so this class of regression is caught in CI.
+
+### Fixed
+- **Generated `astro.config.mjs` no longer emits `output: 'hybrid'`** (removed in Astro 5). Static-by-default + per-route `export const prerender = false` is the correct model; this alone broke every Vercel/Netlify/Cloudflare scaffold at build time.
+- **Removed the malformed `experimental.fonts` block** — it used the wrong entry shape (`family` instead of `name`/`cssVariable`), a string `provider`, and was never wired into `BaseLayout`, so it failed Astro config validation while loading no font.
+- **Zod 4 compatibility** in the generated content schema — `z.record(z.unknown())` (removed in Zod 4) is now the two-argument `z.record(z.string(), z.unknown())`.
+- **JSON-mode XSS** — `writePostToJson` stored raw WordPress `content.rendered` that the generated `PostLayout` injects via `set:html`. It is now sanitized through the same DOMPurify allowlist as the Markdown path (extracted to a shared `sanitizeWpHtml`).
+- **JSON-LD `</script>` breakout** — the `application/ld+json` `set:html` now escapes `<` to `<`.
+- **Inert SSR routes** — the webhook receiver (`/api/hook.ts`) and draft `/preview` route are only scaffolded when a deploy adapter is configured, and the webhook endpoint now declares `export const prerender = false` so it is actually server-rendered.
+
+### Added
+- **Scaffold smoke tests** (`test/scaffold-smoke.test.ts`, +9 tests → 108 total) that scaffold real projects to temp dirs and assert on the generated files (no `hybrid`, valid Zod-4 schema, sanitized JSON content, adapter-gated SSR routes, escaped JSON-LD).
+
+### Changed
+- Removed the unused `image: { layout, responsiveStyles }` config (the scaffolder renders plain `<img>` for remote WP media and never imports `astro:assets`).
+- Supersedes the 3.0.0 "Hybrid output mode" note below — preview SSR now relies on the adapter + per-route `prerender`, not `output: 'hybrid'`.
+
 ## [3.1.0] - 2026-05-30
 
 Security audit and remediation (Tier 1 + Tier 2), a test suite with CI, and a more discoverable tool surface. See `docs/AUDIT-2026-05-30.md` for the full audit.

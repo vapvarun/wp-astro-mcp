@@ -8,7 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import sanitize from 'sanitize-filename';
 import type { WPPost, SiteConfig, ConversionIssue } from '../types/index.js';
-import { convertPost } from './html-to-markdown.js';
+import { convertPost, sanitizeWpHtml } from './html-to-markdown.js';
 import { serializeFrontmatter } from './frontmatter-builder.js';
 import { getCollectionDirForType } from './astro-scaffolder.js';
 import { registerUrlMapping } from './link-rewriter.js';
@@ -451,7 +451,11 @@ export function writePostToJson(
     categories: result.frontmatter.categories,
     tags: result.frontmatter.tags,
     excerpt: result.frontmatter.excerpt,
-    content: post.content?.rendered || '',
+    // JSON mode stores rendered HTML verbatim and the generated PostLayout
+    // injects it via `set:html`, so it MUST be sanitized here (the Markdown
+    // path sanitizes inside convertPost; this path bypassed it). Same
+    // allowlist, one source of truth.
+    content: sanitizeWpHtml(post.content?.rendered || ''),
     featuredImage: result.frontmatter.featuredImage,
     seo: result.frontmatter.seo,
     readingTime: result.frontmatter.readingTime,

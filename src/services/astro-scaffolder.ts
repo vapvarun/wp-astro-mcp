@@ -94,11 +94,13 @@ export function scaffoldProject(
   // 10b. Search page (Pagefind)
   writeFile('src/pages/search.astro', generateSearchPage());
 
-  // 10c. Webhook endpoint for wp-astro-bridge
-  writeFile('src/pages/api/hook.ts', generateWebhookEndpoint());
-
-  // 10d. Preview page (SSR — requires hybrid output mode with an adapter)
+  // 10c/10d. On-demand (SSR) routes — webhook receiver + draft preview.
+  // Both require an adapter; with static-default output they opt out of
+  // prerendering via `export const prerender = false`. Without an adapter
+  // there is no server to run them, so they are only scaffolded when a
+  // deploy platform is configured.
   if (deployPlatform !== 'none') {
+    writeFile('src/pages/api/hook.ts', generateWebhookEndpoint());
     writeFile('src/pages/preview.astro', generatePreviewPage(site, useTailwind));
   }
 
@@ -236,20 +238,7 @@ function generateAstroConfig(site: SiteConfig, deployPlatform: string, component
 
 export default defineConfig({
   site: '${siteUrl}',
-  integrations: [${integrations.join(', ')}],
-  image: {
-    layout: 'constrained',
-    responsiveStyles: true,
-  },
-  experimental: {
-    fonts: [
-      {
-        provider: 'google',
-        family: 'Inter',
-        weights: [400, 500, 600, 700],
-      },
-    ],
-  },`;
+  integrations: [${integrations.join(', ')}],`;
 
   if (deployPlatform !== 'none') {
     const adapterMap: Record<string, string> = {
@@ -258,8 +247,10 @@ export default defineConfig({
       cloudflare: 'cloudflare()',
     };
     if (adapterMap[deployPlatform]) {
+      // Astro 5+ removed `output: 'hybrid'`. Static-by-default is correct;
+      // on-demand routes (preview, webhook) opt in with `export const
+      // prerender = false`, so an adapter is all that's needed here.
       config += `\n  adapter: ${adapterMap[deployPlatform]},`;
-      config += `\n  output: 'hybrid',`;
     }
   }
 
@@ -327,7 +318,7 @@ const baseSchema = z.object({
     ogImage: z.string().optional(),
     noindex: z.boolean().optional(),
     focusKeyword: z.string().optional(),
-    jsonLd: z.record(z.unknown()).optional(),
+    jsonLd: z.record(z.string(), z.unknown()).optional(),
   }).optional(),
   readingTime: z.number().optional(),
   wordCount: z.number().optional(),
@@ -462,7 +453,7 @@ const fullTitle = title === siteTitle ? title : \`\${title} | \${siteTitle}\`;
   <link rel="alternate" type="application/feed+json" title={siteTitle} href="/feed.json" />
 
   {jsonLd && (
-    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd).replace(/</g, '\\\\u003c')} />
   )}
 
   <title>{fullTitle}</title>
@@ -788,6 +779,10 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 
 function generateWebhookEndpoint(): string {
   return `import type { APIRoute } from 'astro';
+
+// Server-rendered on demand (static-default output prerenders routes unless
+// they opt out). A POST endpoint can't be prerendered, so this is required.
+export const prerender = false;
 
 /**
  * Webhook endpoint -- receives content change notifications from wp-astro-bridge.

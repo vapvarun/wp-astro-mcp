@@ -335,7 +335,7 @@ sync_schedule     -> wordpress-plugin option generates setup instructions
 
 | Tool | Description |
 |------|-------------|
-| `scaffold_project` | Create complete Astro 6 project: package.json, astro.config (hybrid mode), layouts, content collections, paginated blog, search (Pagefind), related posts, JSON Feed, RSS, 404 page, reading progress bar, preview route, webhook endpoint, deploy config, and content styling. Generates a `global.css` typography baseline with a WordPress block-compatibility layer (alignwide/full, captions, columns, galleries) and a responsive layer; on the Tailwind path it wires `@tailwindcss/typography` (`prose`) instead. |
+| `scaffold_project` | Create complete Astro 6 project: package.json, astro.config (static by default, adapter-based SSR for the preview/webhook routes), layouts, content collections, paginated blog, search (Pagefind), related posts, JSON Feed, RSS, 404 page, reading progress bar, preview route, webhook endpoint, deploy config, and content styling. Generates a `global.css` typography baseline with a WordPress block-compatibility layer (alignwide/full, captions, columns, galleries) and a responsive layer; on the Tailwind path it wires `@tailwindcss/typography` (`prose`) instead. |
 | `write_post` | Convert and write a single post as Markdown to the content directory. Supports dry_run. |
 | `write_batch` | Convert and write a page of posts. Use with pagination for incremental writing. |
 | `generate_redirects` | Generate redirect rules from WordPress->Astro URL map. Supports Netlify, Vercel, Cloudflare, Apache, Nginx. |
@@ -651,7 +651,7 @@ It is designed for sites with 2,000-6,000+ posts. The SQLite-backed generation e
 By default, no. Media stays on your WordPress server. The `rewrite` strategy swaps the domain in URLs for go-live (e.g., when WordPress moves to `app.example.com` and Astro takes over the main domain). A `download` strategy is planned for fully self-contained sites.
 
 **Q: What Astro version does it target?**
-Astro 6 with hybrid rendering (static by default, SSR for preview route).
+Astro 6 — static by default, with on-demand SSR (via a deploy adapter + per-route `export const prerender = false`) for the preview and webhook routes. (Astro 5 removed the old `output: 'hybrid'` mode.)
 
 ### WordPress Compatibility
 
