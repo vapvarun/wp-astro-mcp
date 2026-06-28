@@ -6,16 +6,14 @@
  * batch content conversion, and GitHub publishing.
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
 import { createRequire } from 'module';
 
 import { getToolsForMode, getHandlersForMode } from './tools/index.js';
+import { getInputSchema } from './tools/registry.js';
 import { database } from './config/database.js';
 import { formatErrorResponse } from './utils/errors.js';
 import logger from './utils/logger.js';
@@ -34,59 +32,55 @@ logger.setLevel(LOG_LEVEL as 'debug' | 'info' | 'warn' | 'error');
 const tools = getToolsForMode(SERVER_MODE);
 const handlers = getHandlersForMode(SERVER_MODE);
 
-async function createServer(): Promise<Server> {
-  const server = new Server(
-    {
-      name: SERVER_NAME,
-      version: SERVER_VERSION,
-    },
-    {
-      capabilities: {
-        tools: {},
+async function createServer(): Promise<McpServer> {
+  const server = new McpServer({
+    name: SERVER_NAME,
+    version: SERVER_VERSION,
+  });
+
+  // Register each tool for the active mode via the high-level API. The SDK
+  // derives the advertised JSON Schema FROM the Zod schema (registry.ts) and
+  // validates input before the handler runs — a validation failure comes back
+  // as an in-band `isError: true` result (the SDK wraps the McpError), so the
+  // model can still self-correct, exactly as before. Handler execution errors
+  // are caught here and returned via formatErrorResponse, preserving the prior
+  // behavior of the low-level dispatch loop.
+  let registered = 0;
+  for (const tool of tools) {
+    const handler = handlers[tool.name];
+    if (!handler) {
+      logger.warn('No handler for tool; skipping registration', { tool: tool.name });
+      continue;
+    }
+
+    server.registerTool(
+      tool.name,
+      {
+        description: tool.description,
+        inputSchema: getInputSchema(tool.name),
+        ...(tool.annotations ? { annotations: tool.annotations } : {}),
       },
-    }
-  );
-
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    logger.debug('Listing tools', { count: tools.length, mode: SERVER_MODE });
-    return { tools };
-  });
-
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-    logger.info('Tool call', { tool: name });
-
-    try {
-      const handler = handlers[name];
-      if (!handler) {
-        return formatErrorResponse(new Error(`Unknown tool: ${name}`)) as {
-          content: Array<{ type: string; text: string }>;
-          isError: boolean;
-          [key: string]: unknown;
-        };
+      async (args: unknown): Promise<CallToolResult> => {
+        logger.info('Tool call', { tool: tool.name });
+        try {
+          const result = await handler(args ?? {});
+          logger.debug('Tool call completed', { tool: tool.name });
+          return result as CallToolResult;
+        } catch (error) {
+          logger.error('Tool call failed', {
+            tool: tool.name,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+          return formatErrorResponse(error) as CallToolResult;
+        }
       }
+    );
+    registered++;
+  }
 
-      const result = await handler(args || {});
-      logger.debug('Tool call completed', { tool: name });
-      return result as {
-        content: Array<{ type: string; text: string }>;
-        isError: boolean;
-        [key: string]: unknown;
-      };
-    } catch (error) {
-      logger.error('Tool call failed', {
-        tool: name,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      return formatErrorResponse(error) as {
-        content: Array<{ type: string; text: string }>;
-        isError: boolean;
-        [key: string]: unknown;
-      };
-    }
-  });
+  logger.debug('Registered tools', { count: registered, mode: SERVER_MODE });
 
-  server.onerror = (error: Error) => {
+  server.server.onerror = (error: Error) => {
     logger.error('Server error', { error: error.message });
   };
 

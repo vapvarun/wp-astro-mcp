@@ -3,10 +3,26 @@
 > Add a blazing-fast Astro frontend to any WordPress site -- from a single blog to a network of 12 sites with 6,000+ posts. WordPress stays as your headless CMS. Fully automated via Claude Code.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org)
-[![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](https://modelcontextprotocol.io)
+[![Node.js](https://img.shields.io/badge/Node.js-20%2B-green.svg)](https://nodejs.org)
+[![MCP](https://img.shields.io/badge/MCP-structured%20output-purple.svg)](https://modelcontextprotocol.io)
+[![Astro](https://img.shields.io/badge/generates-Astro%206-orange.svg)](https://astro.build)
+[![Tests](https://img.shields.io/badge/tests-113%20passing-brightgreen.svg)](#)
 
 **WP Astro MCP** is a [Model Context Protocol](https://modelcontextprotocol.io) server that adds a production-ready Astro frontend layer to your WordPress sites. WordPress remains your content engine -- the CMS where editors write, publish, and manage everything. Astro becomes the fast, public-facing delivery layer. The server connects to your WordPress REST API, extracts everything (posts, pages, CPTs, SEO, ACF, menus, media), converts HTML to clean Markdown, scaffolds a complete Astro project, keeps content in sync, and pushes to GitHub -- all through conversational commands in Claude Code.
+
+---
+
+## Features at a Glance
+
+- **Multi-site** -- one server, many WordPress sites; each with its own credentials, export config, and sync state.
+- **Full content extraction** -- posts, pages, custom post types, taxonomies, authors, media, menus, comments, settings, reusable blocks. Auto-detects Yoast / Rank Math / AIOSEO, ACF, WooCommerce, and page builders.
+- **Clean HTML -> Markdown** -- a 13-step pipeline (DOMPurify sanitize, shortcode resolution, Gutenberg cleanup, link/media rewriting, validation). One shared allowlist for Markdown and JSON output.
+- **Generates Astro 6 projects** -- Content Layer API (`glob` loader), paginated blog, Pagefind search, related posts, RSS + JSON Feed, JSON-LD, sitemap, 404, draft preview (SSR), and a typography baseline with a WordPress block-compatibility layer. Static by default, adapter-based SSR for preview/webhook routes.
+- **Living sync** -- change detection against WordPress, incremental pull, deletion/trash handling, scheduled or webhook-triggered rebuilds. Crash-safe, resumable export jobs backed by SQLite.
+- **GitHub publishing** -- init, create repo, commit, push (token never written to `.git/config`), and deploy config for Vercel / Netlify / Cloudflare.
+- **Optional `wp-astro-bridge` plugin** -- HMAC webhooks on publish, single-use capability-checked draft-preview tokens, a normalized SEO REST field, and a health endpoint.
+- **Modern MCP surface** -- built on the high-level `McpServer` API: tools return machine-readable `structuredContent`, carry read-only / destructive / open-world annotations, and advertise JSON Schemas generated from Zod (one source of truth, validated and displayed identically). Choose `router` mode (a small tool list) or `full` mode (all 57 tools).
+- **Security-reviewed** -- credentials gitignored + `chmod 600`, DOMPurify sanitization, fail-closed webhook HMAC, SSRF surface documented. See [Security & Trust Model](#security--trust-model).
 
 ---
 
@@ -20,6 +36,7 @@ This MCP server handles all of it. Tell Claude to set up your Astro frontend, an
 
 ## Table of Contents
 
+- [Features at a Glance](#features-at-a-glance)
 - [Quick Start](#quick-start)
 - [How It Works](#how-it-works)
 - [Use Cases](#use-cases)
@@ -507,7 +524,7 @@ wordpress/wp-astro-bridge/
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WP_ASTRO_MODE` | `router` | `router` (3 tools) or `full` (all 57) |
+| `WP_ASTRO_MODE` | `router` | `router` (3 meta-tools + 11 promoted = 14) or `full` (all 57) |
 | `WP_ASTRO_CONFIG` | `config/sites.json` | Config file path |
 | `WP_ASTRO_DB` | `data/wp-astro.db` | SQLite database path |
 | `WP_ASTRO_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
@@ -530,6 +547,8 @@ src/
   tools/
     index.ts              -- Tool aggregation and mode switching
     router.ts             -- 3 router tools (wp_astro_run/help/describe)
+    metadata.ts           -- Tool categories, annotations, promoted actions
+    registry.ts           -- Single source of truth: tool name -> Zod input schema
     sites.ts              -- 9 site management tools
     extract.ts            -- 13 content extraction tools
     transform.ts          -- 6 transform tools
@@ -537,6 +556,7 @@ src/
     github.ts             -- 6 GitHub tools
     export.ts             -- 7 content generation pipeline tools
     sync.ts               -- 8 content sync tools
+    wizard.ts             -- 1 setup wizard tool
   schemas/
     sites.ts              -- Zod schemas for site tools
     extract.ts            -- Zod schemas for extract tools
@@ -545,6 +565,7 @@ src/
     github.ts             -- Zod schemas for GitHub tools
     export.ts             -- Zod schemas for generation pipeline tools
     sync.ts               -- Zod schemas for content sync tools
+    wizard.ts             -- Zod schema for the setup wizard
   services/
     wp-rest-client.ts     -- WordPress REST API client
     content-analyzer.ts   -- Content analysis engine
@@ -566,13 +587,16 @@ data/
 
 ### Key Patterns
 
-- **Router mode**: 3 meta-tools expose 57 actions via `wp_astro_run`, keeping the tool list clean for Claude
-- **Singleton managers**: SiteManager, DatabaseManager, Logger -- initialized once, shared everywhere
-- **Token bucket rate limiting**: Per-site rate limiters with automatic backoff on 429 responses
-- **HTTP connection pooling**: Keep-alive agents with 10 max sockets per site
-- **SQLite state machine**: Generation jobs and per-post state for crash recovery and resumability
-- **Zod validation**: All tool inputs validated before processing
-- **Error hierarchy**: `WPAstroError` base class with specific subclasses for clean error reporting
+- **High-level `McpServer`**: tools are registered via `registerTool` with a Zod input schema; the SDK validates input and generates the advertised JSON Schema, so what a client *sees* is exactly what gets *validated*.
+- **Single source of truth (`registry.ts`)**: one tool-name -> Zod-schema map drives both validation and discovery, eliminating the old hand-written-JSON-vs-Zod drift. A coverage test fails CI if a tool is added without a schema.
+- **Structured output**: every successful result returns `structuredContent` (machine-readable) alongside the text block, per the 2025-06-18 MCP spec.
+- **Tool annotations**: read-only / destructive / open-world hints on every tool, so clients can reason about safety (e.g. auto-approve reads, confirm deletes).
+- **Router vs full mode**: `router` (default) exposes 3 meta-tools + the high-value promoted tools; `full` exposes all 57. Set via `WP_ASTRO_MODE`.
+- **Singleton managers**: SiteManager, DatabaseManager, Logger -- initialized once, shared everywhere.
+- **Token bucket rate limiting**: Per-site rate limiters with automatic backoff on 429 responses.
+- **HTTP connection pooling**: Keep-alive agents with 10 max sockets per site.
+- **SQLite state machine**: Generation jobs and per-post state for crash recovery and resumability.
+- **Error hierarchy**: `WPAstroError` base class with specific subclasses; validation and execution errors come back in-band (`isError`) so the model can self-correct.
 
 ### Database Schema
 
@@ -713,7 +737,7 @@ A single command that runs the entire setup flow: register site, analyze content
 ### Technical
 
 **Q: What is the difference between `router` and `full` mode?**
-In `router` mode (default), only 3 tools are exposed to Claude: `wp_astro_run`, `wp_astro_help`, `wp_astro_describe`. This saves tokens. In `full` mode, all 57 tools are exposed directly. Set via `WP_ASTRO_MODE` env var.
+In `router` mode (default), the tool list stays small: 3 meta-tools (`wp_astro_run`, `wp_astro_help`, `wp_astro_describe`) plus 11 high-value "promoted" tools exposed first-class with full schemas and annotations (e.g. `site_add`, `export_start`, `sync_check`, `github_push`) -- 14 total. The long tail of actions stays reachable through `wp_astro_run`. In `full` mode, all 57 actions are exposed directly. Either way every action validates against the same Zod schema. Set via `WP_ASTRO_MODE` env var.
 
 **Q: Does it handle rate limiting?**
 Yes. Each site has a token-bucket rate limiter (default: 10 req/s). If WordPress returns a 429, the rate is automatically halved. Configurable via `rate_limit` in export config.
@@ -797,7 +821,7 @@ See [docs/faq.md](docs/faq.md#build--deployment) for detailed CI/CD setup guides
 
 ## Requirements
 
-- **Node.js** 18 or later
+- **Node.js** 20 or later (the server; generated Astro 6 projects need Node 22.12+)
 - **WordPress** 4.7+ with REST API enabled
 - **Application password** (WordPress 5.6+ built-in, or via plugin for older versions)
 - **GitHub token** (optional, for repo creation -- generate at github.com/settings/tokens)

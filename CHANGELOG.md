@@ -2,6 +2,22 @@
 
 All notable changes to WP Astro MCP are documented here.
 
+## [3.3.0] - 2026-06-29
+
+Migration to the high-level `McpServer` API, with the input schema unified on a single Zod source of truth. The server now advertises JSON Schemas generated from the same Zod schemas it validates against, so the contract a client sees is exactly what gets enforced - which also fixed two cases where the old hand-written JSON Schema had drifted from the validator.
+
+### Changed
+- **`McpServer.registerTool`** replaces the low-level `Server` + manual `setRequestHandler` dispatch. Input is validated by the SDK against each tool's Zod schema; validation failures still come back in-band (`isError: true`) so the model can self-correct, and execution errors are still routed through `formatErrorResponse` - behavior-preserving.
+- **Advertised JSON Schemas are now generated from Zod** (via `src/tools/registry.ts`, a single tool-name -> Zod-schema map), ending the hand-written-JSON-vs-Zod drift (audit M3).
+
+### Fixed
+- **`site_export_config`** advertised `content_format` as `['md','mdx']` while the validator already accepted `'json'`; the advertised schema now correctly shows `['md','mdx','json']`.
+- **`site_add`** advertised `url` as a plain string while the validator enforced URL format; the advertised schema now reflects the real `z.url()` constraint.
+
+### Added
+- **Registry coverage test** (`test/registry-coverage.test.ts`, +5 tests -> 113 total) - fails CI if a tool is added without a Zod input schema, locking in the single-source-of-truth invariant.
+- **README "Features at a Glance"** plus refreshed architecture/MCP-design notes so the capabilities (multi-site, Astro 6 output, living sync, structured output, annotations, router/full modes) are discoverable up front.
+
 ## [3.2.0] - 2026-06-28
 
 Astro 6 scaffold-currency fixes plus a dependency and MCP-protocol refresh. The generated projects targeted Astro 6 but emitted config that Astro 5+ rejects, so every scaffold with a deploy adapter failed `astro build`. This release makes the generated output actually build, closes an XSS gap in JSON mode, modernizes dependencies (Zod 4, Octokit 22, DOMPurify 3, latest MCP SDK), surfaces machine-readable tool output, and adds scaffold-output tests so the build regression is caught in CI.
