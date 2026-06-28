@@ -65,6 +65,14 @@ Note: common actions (site_add, site_list, site_analyze, content_audit, export_p
       },
       required: ['action'],
     },
+    // Dispatcher: can route to any action, including destructive ones
+    // (sync_delete, export_cleanup, …) and external WordPress/GitHub calls.
+    annotations: {
+      title: 'Run WordPress→Astro action',
+      readOnlyHint: false,
+      destructiveHint: true,
+      openWorldHint: true,
+    },
   },
   {
     name: 'wp_astro_help',
@@ -77,6 +85,12 @@ Note: common actions (site_add, site_list, site_analyze, content_audit, export_p
           description: 'Filter by category (site, extract, transform, output, media, github, export, sync, wizard)',
         },
       },
+    },
+    // Pure local metadata lookup over the in-memory tool registry.
+    annotations: {
+      title: 'List actions',
+      readOnlyHint: true,
+      openWorldHint: false,
     },
   },
   {
@@ -91,6 +105,12 @@ Note: common actions (site_add, site_list, site_analyze, content_audit, export_p
         },
       },
       required: ['action'],
+    },
+    // Pure local metadata lookup over the in-memory tool registry.
+    annotations: {
+      title: 'Describe action',
+      readOnlyHint: true,
+      openWorldHint: false,
     },
   },
 ];

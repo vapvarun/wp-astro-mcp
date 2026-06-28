@@ -2,9 +2,20 @@
 
 All notable changes to WP Astro MCP are documented here.
 
-## [3.1.1] - 2026-06-28
+## [3.2.0] - 2026-06-28
 
-Astro 6 scaffold-currency fixes. The generated projects targeted Astro 6 but emitted config that Astro 5+ rejects, so every scaffold with a deploy adapter failed `astro build`. This release makes the generated output actually build, closes an XSS gap in JSON mode, and adds scaffold-output tests so this class of regression is caught in CI.
+Astro 6 scaffold-currency fixes plus a dependency and MCP-protocol refresh. The generated projects targeted Astro 6 but emitted config that Astro 5+ rejects, so every scaffold with a deploy adapter failed `astro build`. This release makes the generated output actually build, closes an XSS gap in JSON mode, modernizes dependencies (Zod 4, Octokit 22, DOMPurify 3, latest MCP SDK), surfaces machine-readable tool output, and adds scaffold-output tests so the build regression is caught in CI.
+
+### Added
+- **MCP `structuredContent`** — every successful tool result now returns its JSON payload as `structuredContent` (2025-06-18 spec) alongside the existing text block, so callers no longer re-parse JSON out of prose. Non-object payloads are wrapped as `{ result: ... }` to satisfy the protocol's object requirement.
+- **Fuller tool annotations** — `openWorldHint` is set across the data-tool surface (external WordPress/GitHub integration), and the 3 router tools (`wp_astro_run`/`help`/`describe`) are now annotated (run = destructive + open-world; help/describe = read-only + closed-world).
+- **Scaffold smoke tests** (`test/scaffold-smoke.test.ts`, +9 tests → 108 total) that scaffold real projects to temp dirs and assert on the generated files (no `hybrid`, valid Zod-4 schema, sanitized JSON content, adapter-gated SSR routes, escaped JSON-LD).
+
+### Changed
+- **Dependencies modernized:** Zod 3 → 4 (`z.string().url()` migrated to `z.url()`), `@octokit/rest` 21 → 22, `isomorphic-dompurify` 2 → 3, `@modelcontextprotocol/sdk` → 1.29. Removed unused `p-limit` and `fast-xml-parser` (also clears their advisories). Bumped `engines.node` to `>=20` to match `better-sqlite3@12` and the generated Node-22 projects.
+- **Dev-only advisories cleared** — `npm audit fix` (vitest → 3.2.6); `npm audit` now reports 0 vulnerabilities.
+- Removed the unused `image: { layout, responsiveStyles }` config (the scaffolder renders plain `<img>` for remote WP media and never imports `astro:assets`).
+- Supersedes the 3.0.0 "Hybrid output mode" note below — preview SSR now relies on the adapter + per-route `prerender`, not `output: 'hybrid'`.
 
 ### Fixed
 - **Generated `astro.config.mjs` no longer emits `output: 'hybrid'`** (removed in Astro 5). Static-by-default + per-route `export const prerender = false` is the correct model; this alone broke every Vercel/Netlify/Cloudflare scaffold at build time.
@@ -13,13 +24,6 @@ Astro 6 scaffold-currency fixes. The generated projects targeted Astro 6 but emi
 - **JSON-mode XSS** — `writePostToJson` stored raw WordPress `content.rendered` that the generated `PostLayout` injects via `set:html`. It is now sanitized through the same DOMPurify allowlist as the Markdown path (extracted to a shared `sanitizeWpHtml`).
 - **JSON-LD `</script>` breakout** — the `application/ld+json` `set:html` now escapes `<` to `<`.
 - **Inert SSR routes** — the webhook receiver (`/api/hook.ts`) and draft `/preview` route are only scaffolded when a deploy adapter is configured, and the webhook endpoint now declares `export const prerender = false` so it is actually server-rendered.
-
-### Added
-- **Scaffold smoke tests** (`test/scaffold-smoke.test.ts`, +9 tests → 108 total) that scaffold real projects to temp dirs and assert on the generated files (no `hybrid`, valid Zod-4 schema, sanitized JSON content, adapter-gated SSR routes, escaped JSON-LD).
-
-### Changed
-- Removed the unused `image: { layout, responsiveStyles }` config (the scaffolder renders plain `<img>` for remote WP media and never imports `astro:assets`).
-- Supersedes the 3.0.0 "Hybrid output mode" note below — preview SSR now relies on the adapter + per-route `prerender`, not `output: 'hybrid'`.
 
 ## [3.1.0] - 2026-05-30
 

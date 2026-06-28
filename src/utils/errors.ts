@@ -178,7 +178,21 @@ export function formatErrorResponse(error: unknown): ToolResponse {
 }
 
 /**
- * Format a success response
+ * Coerce any handler payload into the object that MCP `structuredContent`
+ * requires. Plain objects pass through; arrays and scalars (which the protocol's
+ * object schema rejects) are wrapped under a `result` key.
+ */
+function toStructuredContent(data: unknown): Record<string, unknown> {
+  if (data !== null && typeof data === 'object' && !Array.isArray(data)) {
+    return data as Record<string, unknown>;
+  }
+  return { result: data };
+}
+
+/**
+ * Format a success response. The JSON is returned both as a text block (for
+ * clients/models that read prose) and as `structuredContent` (machine-readable,
+ * per the 2025-06-18 MCP spec) so callers don't have to re-parse JSON out of text.
  */
 export function formatSuccessResponse(data: unknown): ToolResponse {
   return {
@@ -188,6 +202,7 @@ export function formatSuccessResponse(data: unknown): ToolResponse {
         text: JSON.stringify(data, null, 2),
       },
     ],
+    structuredContent: toStructuredContent(data),
     isError: false,
   };
 }

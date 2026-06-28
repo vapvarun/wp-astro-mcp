@@ -408,6 +408,14 @@ export interface ToolResponse {
     text: string;
   }>;
   isError: boolean;
+  /**
+   * Machine-readable result, mirrored from the JSON in the text block
+   * (MCP `structuredContent`, added to the spec in 2025-06-18). The protocol
+   * requires this to be a plain object, so scalar/array payloads are wrapped
+   * as `{ result: ... }` before they land here. Clients that don't understand
+   * the field simply ignore it and read the text content instead.
+   */
+  structuredContent?: Record<string, unknown>;
 }
 
 export interface PaginationInfo {

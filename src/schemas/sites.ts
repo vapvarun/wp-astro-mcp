@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 export const siteAddSchema = z.object({
   name: z.string().min(1).describe('Display name for the site'),
-  url: z.string().url().describe('WordPress site URL (e.g., https://example.com)'),
+  url: z.url().describe('WordPress site URL (e.g., https://example.com)'),
   username: z.string().min(1).describe('WordPress username'),
   app_password: z
     .string()
@@ -22,7 +22,7 @@ export const siteIdSchema = z.object({
 export const siteUpdateSchema = z.object({
   site_id: z.string().describe('Site ID to update'),
   name: z.string().min(1).optional(),
-  url: z.string().url().optional(),
+  url: z.url().optional(),
   username: z.string().min(1).optional(),
   app_password: z.string().min(1).optional(),
 });

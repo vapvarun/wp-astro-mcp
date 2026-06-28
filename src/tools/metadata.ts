@@ -113,8 +113,15 @@ const TITLES: Record<string, string> = {
 };
 
 /**
- * Stamp MCP annotations (readOnlyHint / destructiveHint / title) onto a tool,
- * based on the central classification above. Idempotent and non-mutating.
+ * Stamp MCP annotations (readOnlyHint / destructiveHint / openWorldHint / title)
+ * onto a tool, based on the central classification above. Idempotent and
+ * non-mutating.
+ *
+ * `openWorldHint: true` is applied across the surface: every data tool
+ * participates in an external WordPress (REST) or GitHub integration, so it
+ * matches both the product reality and the MCP spec default. `idempotentHint`
+ * is intentionally NOT set — it would require per-handler idempotency analysis,
+ * and a wrong hint is worse than an absent one.
  */
 export function annotateTool(tool: Tool): Tool {
   const readOnly = READ_ONLY_ACTIONS.has(tool.name);
@@ -125,6 +132,7 @@ export function annotateTool(tool: Tool): Tool {
       ...(tool.annotations ?? {}),
       ...(TITLES[tool.name] ? { title: TITLES[tool.name] } : {}),
       readOnlyHint: readOnly,
+      openWorldHint: true,
       ...(destructive ? { destructiveHint: true } : {}),
     },
   };
